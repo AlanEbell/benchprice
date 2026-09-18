@@ -64,6 +64,27 @@ app.on('browser-window-created', (event, win) => {
       assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen small').textContent"), /Tiered/);
       await shot('3-main-priced');
 
+      // a price set by hand wins; clearing starts over
+      await run("document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click(); $('pManual').value = '299'; updatePiece();");
+      assert.equal(await run("return $('methodCards').classList.contains('overridden') && !$('byHandNote').hidden"), true);
+      assert.match(await run("return $('byHandNote').textContent"), /Set by hand: \$299\.00 a piece\. Tiered materials would say/);
+      await shot('3b-by-hand');
+      await run("document.querySelector('#pieceForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));");
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json'), 'utf8')).manual_price, 299);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), /Set by hand\$299/);
+      await run("document.querySelector('#pieces .row[data-id=hoops] [data-act=price]').click();");
+      assert.equal(await run("return $('pieceClear').hidden"), true, 'nothing to clear on an unpriced line');
+      await run("$('pieceCancel').click(); document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click(); $('pieceClear').click(); await new Promise((r) => setTimeout(r, 200));");
+      assert.equal(await run("return $('askDlg').open"), true);
+      await run("$('askYes').click(); await new Promise((r) => setTimeout(r, 400));");
+      assert.equal(fs.existsSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json')), false, 'cleared');
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices').textContent"), /no weight or materials yet/);
+      // price it again for the rest of the run
+      await run(`document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click();
+                 $('pMetal').value = 'sterling'; $('pWeight').value = '4.2'; $('partAdd').click();
+                 $('partRows').children[0].querySelector('[data-part=name]').value = 'Moonstone'; $('partRows').children[0].querySelector('[data-part=unit_cost]').value = '31';
+                 updatePiece(); document.querySelector('#pieceForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));`);
+
       // settings: a new rate and a silver price change every price
       const before = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent");
       await run("$('settingsBtn').click(); await new Promise((r) => setTimeout(r, 200));");

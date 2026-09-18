@@ -74,14 +74,16 @@ function rowHtml(p) {
     p.pricing.notes && esc(p.pricing.notes),
   ].filter(Boolean).join(' &middot; ');
   const qty = p.quantity > 1 ? `<span class="qty">&times;${p.quantity}</span>` : '';
+  const hand = p.priced.by_hand;
   const prices = p.priced.complete ?
-    [1, 2, 3].map((m) => `<span class="m ${p.priced.method === m ? 'chosen' : ''}"><small>${esc(state.methods[m].name)}</small>${money0(p.priced.methods[m].price)}</span>`).join('') :
+    [1, 2, 3].map((m) => `<span class="m ${!hand && p.priced.method === m ? 'chosen' : ''}"><small>${esc(state.methods[m].name)}</small>${money0(p.priced.methods[m].price)}</span>`).join('') +
+      (hand ? `<span class="m chosen hand"><small>Set by hand</small>${money0(p.priced.price)}</span>` : '') :
     `<span class="m none" style="grid-column: span 3">no weight or materials yet</span>`;
   return `<div class="row ${selected.has(p.id) ? 'selected' : ''}" data-id="${esc(p.id)}">
     <input type="checkbox" data-act="select" aria-label="Select ${esc(p.label)}" ${selected.has(p.id) ? 'checked' : ''}>
     ${tile(p)}
     <div class="name"><b>${esc(p.label)}</b>${qty}<div class="meta">${fmtDur(p.seconds_per_piece)}${p.set ? ' each' : ''} &middot; ${meta}</div></div>
-    <div class="prices">${prices}</div>
+    <div class="prices ${hand ? 'by-hand' : ''}">${prices}</div>
     <div class="acts"><button class="quiet go" data-act="price">Price</button></div>
   </div>`;
 }
@@ -117,6 +119,21 @@ $('clearSel').onclick = () => { selected.clear(); render(); };
 $('showBench').onchange = () => api('state', { includeBench: $('showBench').checked });
 $('dataDir').onclick = () => api('openDataFolder');
 
+/** A yes/no question in the app's own style. Resolves true for yes. */
+function ask(title, text, yesLabel) {
+  $('askTitle').textContent = title;
+  $('askText').textContent = text;
+  $('askYes').textContent = yesLabel;
+  $('askDlg').showModal();
+  $('askNo').focus();
+  return new Promise((resolve) => {
+    const done = (answer) => { $('askDlg').close(); resolve(answer); };
+    $('askYes').onclick = () => done(true);
+    $('askNo').onclick = () => done(false);
+    $('askDlg').oncancel = () => resolve(false);
+  });
+}
+
 // ---- pricing one piece -------------------------------------------------
 
 let editing = null; // the piece or set in the box
@@ -147,6 +164,7 @@ function pieceDraft() {
       unit_cost: Number(tr.querySelector('[data-part=unit_cost]').value) || 0,
     })),
     method: $('pMethod').value === '' ? null : Number($('pMethod').value),
+    manual_price: $('pManual').value === '' ? null : Number($('pManual').value),
     notes: $('pNotes').value,
   };
 }
@@ -173,6 +191,11 @@ function updatePiece() {
     3: (m) => [`${m.lines.map((l) => `${esc(l.name)} &times;${l.factor}`).join(', ') || 'no materials'} = ${money(m.marked)}`, `+ ${money(p.labor)} labor + ${money(m.studio)} studio`, `&divide; (1 &minus; ${pct(m.margin)} margin)`],
   };
   const chosen = p.method;
+  $('methodCards').classList.toggle('overridden', p.by_hand);
+  $('byHandNote').hidden = !p.by_hand;
+  if (p.by_hand) {
+    $('byHandNote').textContent = `Set by hand: ${money(p.price)} a piece. ${state.methods[chosen].name} would say ${money0(p.methods[chosen].price)}.`;
+  }
   $('methodCards').innerHTML = [1, 2, 3].map((id) => {
     const m = p.methods[id];
     return `<button type="button" class="card ${chosen === id ? 'chosen' : ''}" data-method="${id}" title="Price this piece by ${esc(m.name)}">
@@ -197,7 +220,9 @@ function openPiece(piece) {
   $('pMethod').innerHTML = `<option value="">Default: ${esc(state.methods[s.default_method].name)}</option>` +
     [1, 2, 3].map((id) => `<option value="${id}">${id}. ${esc(state.methods[id].name)}</option>`).join('');
   $('pMethod').value = piece.pricing.method || '';
+  $('pManual').value = piece.pricing.manual_price ?? '';
   $('pNotes').value = piece.pricing.notes || '';
+  $('pieceClear').hidden = !piece.pricing.updated_at; // nothing entered yet, nothing to clear
   updatePiece();
   $('pieceDlg').showModal();
   $('pWeight').focus();
@@ -214,12 +239,20 @@ $('methodCards').addEventListener('click', (ev) => {
   updatePiece();
 });
 $('pieceCancel').onclick = () => $('pieceDlg').close();
+$('pieceClear').onclick = async () => {
+  const what = editing.set ? `the set of ${editing.quantity} \u00d7 ${editing.name}` : editing.label;
+  if (await ask(`Clear the pricing of ${what}?`, 'Its metal, weight, materials, method and any price set by hand are forgotten. The time from BenchClock stays.', 'Clear')) {
+    await api('clearPricing', { id: editing.id });
+    $('pieceDlg').close();
+    toast(`${editing.label} is back to the start.`);
+  }
+};
 $('pieceForm').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   await api('savePricing', { id: editing.id, ...pieceDraft() });
   $('pieceDlg').close();
   const p = findPiece(editing.id);
-  toast(p && p.priced.complete ? `${p.label}${p.set ? ` (each of ${p.quantity})` : ''}: ${money0(p.priced.price)} by ${state.methods[p.priced.method].name}.` : `${editing.label} saved.`);
+  toast(p && p.priced.complete ? `${p.label}${p.set ? ` (each of ${p.quantity})` : ''}: ${money0(p.priced.price)}${p.priced.by_hand ? ', set by hand' : ` by ${state.methods[p.priced.method].name}`}.` : `${editing.label} saved.`);
 });
 
 // ---- settings ----------------------------------------------------------

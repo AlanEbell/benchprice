@@ -243,6 +243,11 @@ class PriceBook {
    */
   static groupKey(item) { return item.batch_id && item.type !== 'custom' ? item.batch_id : item.id; }
 
+  /** Forget everything entered for a piece or set: its metal, weight, materials, method and any price set by hand. */
+  clearPricing(itemId) {
+    fs.rmSync(this.pricedPath(itemId), { force: true });
+  }
+
   /**
    * Every set or single piece, with the pieces in it. The making time is the average per piece
    * over the finished ones (over all of them while none is finished), so the whole set prices
@@ -302,10 +307,10 @@ class PriceBook {
   getPricing(itemId) {
     const file = this.pricedPath(itemId);
     const saved = fs.existsSync(file) ? readJson(file) : {};
-    return { item_id: itemId, metal: null, weight_grams: 0, components: [], method: null, notes: '', ...saved };
+    return { item_id: itemId, metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '', ...saved };
   }
 
-  savePricing(itemId, { metal, weight_grams, components, method, notes } = {}) {
+  savePricing(itemId, { metal, weight_grams, components, method, manual_price, notes } = {}) {
     const settings = this.settings();
     const current = this.getPricing(itemId);
     const next = { ...current, schema_version: SCHEMA_VERSION, item_id: itemId };
@@ -325,6 +330,7 @@ class PriceBook {
         }));
     }
     if (method !== undefined) next.method = method === null || method === '' ? null : num(method, 'Method', { min: 1, max: 3, integer: true });
+    if (manual_price !== undefined) next.manual_price = manual_price === null || manual_price === '' ? null : num(manual_price, 'The price', { min: 0 });
     if (notes !== undefined) next.notes = String(notes ?? '').trim();
     next.updated_at = new Date().toISOString();
     writeJson(this.pricedPath(itemId), next);
@@ -338,7 +344,7 @@ class PriceBook {
     const rows = groups.map(({ priced: p, ...item }) => [
       item.id, item.label, item.type, item.sku, item.status, item.finished_at || '', item.quantity, item.pieces.map((i) => i.id).join('; '), p.hours,
       p.metal ? p.metal.name : '', p.weight_grams, p.metal_cost, p.components.map((c) => `${c.quantity} x ${c.name} @ ${c.unit_cost}`).join('; '),
-      p.components_cost, p.materials, p.labor, p.methods[1].price, p.methods[2].price, p.methods[3].price, p.method, p.price, item.pricing.notes,
+      p.components_cost, p.materials, p.labor, p.methods[1].price, p.methods[2].price, p.methods[3].price, p.by_hand ? 'by hand' : p.method, p.price, item.pricing.notes,
     ]);
     const text = [CSV_FIELDS, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
     fs.writeFileSync(file, text, 'utf8');

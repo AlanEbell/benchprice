@@ -69,6 +69,11 @@ test('the three methods on the moonstone ring', () => {
   assert.equal(price(item, pricing, { ...settings, fees: 0.06, round_to: 5, round_mode: 'down' }, 0.3).methods[2].price, 290);
   assert.equal(price(item, pricing, { ...settings, fees: 0.06, round_to: 5, round_mode: 'nearest' }, 0.3).methods[2].price, 290);
   assert.equal(price(item, {}, settings, 0.3).complete, false);
+  // a price set by hand wins, and the methods are still there to compare
+  const hand = price(item, { ...pricing, manual_price: '299.5' }, settings, 0.3);
+  assert.deepEqual([hand.by_hand, hand.price, hand.methods[2].price, hand.complete], [true, 299.5, 273.23, true]);
+  assert.equal(price(item, { manual_price: 120 }, settings, 0.3).complete, true, 'a hand price alone is a complete price');
+  assert.equal(price(item, { ...pricing, manual_price: '' }, settings, 0.3).by_hand, false);
 });
 
 test('the TimeOverhead share is measured from BenchClock unless overridden', () => {
@@ -112,7 +117,17 @@ test('pricing a piece is saved beside BenchClock without touching its files', ()
   assert.throws(() => book.savePricing('moonstone-ring-1', { metal: 'unobtainium' }), PricingError);
   assert.throws(() => book.savePricing('moonstone-ring-1', { weight_grams: -1 }), PricingError);
   assert.throws(() => book.savePricing('../settings', {}), PricingError);
-  assert.deepEqual(book.getPricing('cuff-1'), { item_id: 'cuff-1', metal: null, weight_grams: 0, components: [], method: null, notes: '' });
+  assert.throws(() => book.savePricing('moonstone-ring-1', { manual_price: -5 }), PricingError);
+  book.savePricing('moonstone-ring-1', { manual_price: '310' });
+  assert.equal(book.getPricing('moonstone-ring-1').manual_price, 310);
+  assert.deepEqual([book.listGroups()[0].priced.by_hand, book.listGroups()[0].priced.price], [true, 310]);
+  book.savePricing('moonstone-ring-1', { manual_price: null });
+  assert.equal(book.listGroups()[0].priced.by_hand, false);
+  book.clearPricing('moonstone-ring-1');
+  assert.equal(fs.existsSync(path.join(dir, 'pricing', 'items', 'moonstone-ring-1.json')), false);
+  assert.equal(book.listGroups()[0].priced.complete, false, 'cleared: back to the start');
+  book.clearPricing('moonstone-ring-1'); // clearing twice is fine
+  assert.deepEqual(book.getPricing('cuff-1'), { item_id: 'cuff-1', metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '' });
 });
 
 test('the list is finished pieces first with prices, and the bench on request', () => {

@@ -14,7 +14,9 @@ works out a price three ways. A desktop app for Linux, Windows and macOS.
 - **Price** on a line opens the piece: its metal and weight in grams, and a list of stones,
   findings and anything else bought in, at what you paid. The prices update as you type, and
   the box shows how each was arrived at. Press a method's card to price this piece that way
-  instead of the default.
+  instead of the default. *Or set the price yourself* overrides every method with a price you
+  choose; the methods are still shown beside it for comparison. *Clear pricing* forgets
+  everything entered for the line so you can start over.
 - **Three methods**, side by side:
   1. **Cost-plus**: materials plus labor, times a factor (2 to start).
   2. **Loaded hourly** (the default): your hourly rate divided by the share of clocked time

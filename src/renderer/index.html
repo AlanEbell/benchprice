@@ -56,10 +56,14 @@
     </table>
     <button type="button" class="quiet" id="partAdd">+ Add a line</button>
 
-    <div class="two">
+    <div class="three">
       <div>
         <label for="pMethod">Price by</label>
         <select id="pMethod"></select>
+      </div>
+      <div>
+        <label for="pManual">Or set the price yourself <span class="muted">- wins over the method</span></label>
+        <div class="unit-field"><span class="unit">$</span><input type="number" id="pManual" min="0" step="0.01" placeholder="leave blank to use the method"></div>
       </div>
       <div>
         <label for="pNotes">Notes</label>
@@ -68,14 +72,26 @@
     </div>
 
     <div class="breakdown" id="breakdown"></div>
+    <p class="by-hand-note" id="byHandNote" hidden></p>
     <div class="methods" id="methodCards"></div>
 
     <div class="actions">
+      <button type="button" class="danger quiet" id="pieceClear" title="Forget the metal, weight, materials and price for this line and start over">Clear pricing</button>
       <span class="spacer"></span>
       <button type="button" id="pieceCancel">Cancel</button>
       <button type="submit" class="primary">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="askDlg">
+  <h2 id="askTitle"></h2>
+  <p id="askText"></p>
+  <div class="actions">
+    <span class="spacer"></span>
+    <button type="button" id="askNo">Cancel</button>
+    <button type="button" class="primary" id="askYes"></button>
+  </div>
 </dialog>
 
 <dialog id="settingsDlg">

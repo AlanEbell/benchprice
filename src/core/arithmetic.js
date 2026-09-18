@@ -83,10 +83,14 @@ function price(item, pricing, settings, overheadShare) {
 
   const chosen = [1, 2, 3].includes(Number(pricing && pricing.method)) ? Number(pricing.method) : Number(settings.default_method) || 2;
   const methods = { 1: m1, 2: m2, 3: m3 };
+  // A price set by hand wins over every method; the methods are still worked out for comparison.
+  const byHand = pricing && pricing.manual_price !== null && pricing.manual_price !== undefined && pricing.manual_price !== '' &&
+    Number.isFinite(Number(pricing.manual_price)) ? round2(Number(pricing.manual_price)) : null;
   return {
     hours, rate, labor, metal: metal ? { id: metal.id, name: metal.name, per_gram: perGram } : null, weight_grams: weight,
     metal_cost: metalCost, components, components_cost: componentsCost, materials, fees, methods, method: chosen,
-    price: methods[chosen].price, complete: weight > 0 || componentsCost > 0,
+    manual_price: byHand, by_hand: byHand !== null, price: byHand !== null ? byHand : methods[chosen].price,
+    complete: byHand !== null || weight > 0 || componentsCost > 0,
   };
 }
 

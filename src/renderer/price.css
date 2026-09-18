@@ -19,6 +19,12 @@
 .row .prices .m.chosen { color: var(--ink); font-weight: 600; font-size: 16px; }
 .row .prices .m.chosen small { color: var(--accent); }
 .row .prices .m.none { color: var(--muted); font-style: italic; font-weight: 400; font-size: 13px; }
+.row .prices.by-hand { grid-template-columns: repeat(4, auto); }
+.row .prices .m.hand small { color: var(--gold); }
+.methods.overridden .card { opacity: .55; }
+.methods.overridden .card.chosen { border-color: var(--line); background: var(--card); }
+.methods.overridden .card.chosen .price { color: var(--ink); }
+.by-hand-note { margin-top: 10px; font-size: 14px; color: var(--gold); font-weight: 600; }
 
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 16px; }
