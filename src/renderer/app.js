@@ -9,7 +9,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-let state = { pieces: [], settings: null, methods: METHODS, measuredOverhead: 0, overheadShare: 0, hasBenchClock: true };
+let state = { groups: [], settings: null, methods: METHODS, measuredOverhead: 0, overheadShare: 0, hasBenchClock: true };
 const selected = new Set();
 
 function toast(message) {
@@ -39,7 +39,7 @@ const pct = (share) => `${Math.round(share * 1000) / 10}%`;
 const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 const pieces = (n) => `${n} piece${n === 1 ? '' : 's'}`;
 const photoUrl = (name) => `bench-photo://library/${encodeURIComponent(name)}`;
-const findPiece = (id) => state.pieces.find((p) => p.id === id);
+const findPiece = (id) => state.groups.find((p) => p.id === id);
 
 function tile(item, extra = '') {
   if (item.photo) return `<span class="tile photo ${extra}"><img src="${photoUrl(item.photo)}" alt=""></span>`;
@@ -61,10 +61,13 @@ function stripHtml() {
     ${chips.join('')}`;
 }
 
+const STATUS = { finished: 'finished', part_finished: 'finished', in_progress: 'on the bench', not_started: 'not started' };
+
 function rowHtml(p) {
-  const finished = p.status === 'finished';
+  const finished = p.finished > 0;
   const meta = [
-    finished ? `finished ${fmtDay(p.finished_at)}` : (p.status === 'in_progress' ? 'on the bench' : 'not started'),
+    p.set && (p.status === 'part_finished' ? `a set: ${p.finished} of ${p.quantity} finished, one price` : 'a set, one price'),
+    finished ? `finished ${fmtDay(p.finished_at)}` : STATUS[p.status],
     p.sku && `SKU ${esc(p.sku)}`,
     p.priced.metal ? `${p.priced.weight_grams} g ${esc(p.priced.metal.name)}` : (p.priced.weight_grams ? `${p.priced.weight_grams} g` : ''),
     p.priced.components.length && `${p.priced.components.length} bought-in item${p.priced.components.length === 1 ? '' : 's'} ${money(p.priced.components_cost)}`,
@@ -77,7 +80,7 @@ function rowHtml(p) {
   return `<div class="row ${selected.has(p.id) ? 'selected' : ''}" data-id="${esc(p.id)}">
     <input type="checkbox" data-act="select" aria-label="Select ${esc(p.label)}" ${selected.has(p.id) ? 'checked' : ''}>
     ${tile(p)}
-    <div class="name"><b>${esc(p.label)}</b>${qty}<div class="meta">${fmtDur(p.seconds_per_piece)}${p.quantity > 1 ? ' each' : ''} &middot; ${meta}</div></div>
+    <div class="name"><b>${esc(p.label)}</b>${qty}<div class="meta">${fmtDur(p.seconds_per_piece)}${p.set ? ' each' : ''} &middot; ${meta}</div></div>
     <div class="prices">${prices}</div>
     <div class="acts"><button class="quiet go" data-act="price">Price</button></div>
   </div>`;
@@ -86,13 +89,14 @@ function rowHtml(p) {
 function render() {
   $('strip').innerHTML = stripHtml();
   for (const id of [...selected]) if (!findPiece(id)) selected.delete(id);
-  const list = state.pieces;
+  const list = state.groups;
   const showBench = $('showBench').checked;
   $('listTitle').firstChild.textContent = showBench ? 'All pieces ' : 'Finished pieces ';
   $('pieces').innerHTML = list.length ? list.map(rowHtml).join('') :
     `<div class="empty">${state.hasBenchClock ? 'Nothing finished in BenchClock yet. Tick "Show the bench too" to price pieces that are still being made.' :
       'BenchPrice reads the pieces from BenchClock\'s data folder, and there isn\'t one here.'}</div>`;
-  $('pieceCount').textContent = list.length ? pieces(list.length) : '';
+  const count = list.reduce((n, g) => n + g.quantity, 0);
+  $('pieceCount').textContent = list.length ? `${pieces(count)}${count !== list.length ? ` in ${list.length} set${list.length === 1 ? '' : 's'} or single${list.length === 1 ? '' : 's'}` : ''}` : '';
   $('selCount').textContent = selected.size ? `${selected.size} ticked` : '';
   $('clearSel').hidden = !selected.size;
   $('exportBtn').textContent = selected.size ? `Save price sheet (${selected.size})` : 'Save price sheet';
@@ -115,7 +119,8 @@ $('dataDir').onclick = () => api('openDataFolder');
 
 // ---- pricing one piece -------------------------------------------------
 
-let editing = null; // the piece in the box
+let editing = null; // the piece or set in the box
+const ROUNDING = { up: 'up to the next', nearest: 'to the nearest', down: 'down to the last' };
 
 function partRow(part = { name: '', quantity: 1, unit_cost: '' }) {
   const tr = document.createElement('tr');
@@ -160,8 +165,8 @@ function updatePiece() {
     line(`Stones and findings`, money(p.components_cost)) +
     line(`Materials`, money(p.materials), 'sum') +
     line(`Labor: ${p.hours} h at ${money0(p.rate)}/h`, money(p.labor)) +
-    (p.fees ? `<div class="muted">Prices include ${pct(p.fees)} selling fees${state.settings.round_to ? `, rounded up to the nearest ${money0(state.settings.round_to)}` : ''}.</div>` :
-      state.settings.round_to > 1 ? `<div class="muted">Prices are rounded up to the nearest ${money0(state.settings.round_to)}.</div>` : '');
+    (p.fees || state.settings.round_to > 1 ? `<div class="muted">Prices ${[p.fees && `include ${pct(p.fees)} selling fees`,
+      state.settings.round_to > 1 && `are rounded ${ROUNDING[state.settings.round_mode] || ROUNDING.up} ${money0(state.settings.round_to)}`].filter(Boolean).join(' and ')}.</div>` : '');
   const how = {
     1: (m) => [`(${money(p.materials)} materials + ${money(p.labor)} labor)`, `&times; ${m.factor}`],
     2: (m) => [`${money0(p.rate)}/h &divide; (1 &minus; ${pct(m.overhead_share)}) = ${money(m.loaded_rate)}/h`, `${p.hours} h &times; ${money(m.loaded_rate)} = ${money(m.labor)}`, `+ ${money(p.materials)} materials, &divide; (1 &minus; ${pct(m.margin)} margin)`],
@@ -179,9 +184,11 @@ function updatePiece() {
 function openPiece(piece) {
   editing = piece;
   const s = state.settings;
-  $('pieceTitle').textContent = piece.label;
-  $('pieceHint').textContent = `${fmtDur(piece.seconds_per_piece)} of making time${piece.quantity > 1 ? ` per piece, a batch of ${piece.quantity}` : ''} from BenchClock` +
-    `${piece.status === 'finished' ? `, finished ${fmtDay(piece.finished_at)}` : ', still on the bench'}. Everything below is per piece.`;
+  $('pieceTitle').textContent = piece.set ? `${piece.label} \u00d7${piece.quantity}` : piece.label;
+  $('pieceHint').textContent = piece.set ?
+    `A set of ${piece.quantity}: every piece carries the same price. ${fmtDur(piece.seconds_per_piece)} of making time each, the average from BenchClock over ` +
+      `${piece.finished ? `the ${piece.finished} finished` : 'all of them, none finished yet'}. Everything below is per piece.` :
+    `${fmtDur(piece.seconds_per_piece)} of making time from BenchClock${piece.finished ? `, finished ${fmtDay(piece.finished_at)}` : ', still on the bench'}. Everything below is per piece.`;
   $('pMetal').innerHTML = '<option value="">No metal</option>' + s.metals.map((m) =>
     `<option value="${esc(m.id)}">${esc(m.name)} (${money(metalPerGram(m, s.spot))}/g)</option>`).join('');
   $('pMetal').value = piece.pricing.metal || '';
@@ -212,7 +219,7 @@ $('pieceForm').addEventListener('submit', async (ev) => {
   await api('savePricing', { id: editing.id, ...pieceDraft() });
   $('pieceDlg').close();
   const p = findPiece(editing.id);
-  toast(p && p.priced.complete ? `${p.label}: ${money0(p.priced.price)} by ${state.methods[p.priced.method].name}.` : `${editing.label} saved.`);
+  toast(p && p.priced.complete ? `${p.label}${p.set ? ` (each of ${p.quantity})` : ''}: ${money0(p.priced.price)} by ${state.methods[p.priced.method].name}.` : `${editing.label} saved.`);
 });
 
 // ---- settings ----------------------------------------------------------
@@ -296,6 +303,7 @@ function openSettings() {
   $('sMargin3').value = Math.round(s.tiered.margin * 1000) / 10;
   $('sFees').value = Math.round(s.fees * 1000) / 10;
   $('sRound').value = s.round_to;
+  (document.querySelector(`input[name=sRoundMode][value=${s.round_mode || 'up'}]`) || {}).checked = true;
   $('settingsDlg').showModal();
   $('sRate').focus();
 }
@@ -321,6 +329,7 @@ $('settingsForm').addEventListener('submit', async (ev) => {
     tiered: { tiers: bands, studio_per_hour: $('sStudio').value, margin: Number($('sMargin3').value) / 100 },
     fees: Number($('sFees').value) / 100,
     round_to: $('sRound').value,
+    round_mode: (document.querySelector('input[name=sRoundMode]:checked') || {}).value || 'up',
   });
   $('settingsDlg').close();
   toast('Settings saved. Every price is worked out afresh.');

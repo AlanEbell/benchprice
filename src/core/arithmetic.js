@@ -27,7 +27,13 @@ function tierFactor(tiers, cost) {
   return 1;
 }
 
-const roundTo = (price, step) => (step > 0 ? Math.ceil(price / step - 1e-9) * step : price);
+/** `price` to a multiple of `step`: rounded 'up' (the default), to the 'nearest', or 'down'. A step of 0 leaves it alone. */
+function roundTo(price, step, mode = 'up') {
+  if (!(step > 0)) return price;
+  const steps = price / step;
+  const whole = mode === 'down' ? Math.floor(steps + 1e-9) : mode === 'nearest' ? Math.round(steps) : Math.ceil(steps - 1e-9);
+  return whole * step;
+}
 
 /**
  * Everything the three methods say about one piece. `item` is a BenchClock piece, `pricing`
@@ -50,7 +56,7 @@ function price(item, pricing, settings, overheadShare) {
   const fees = Math.min(Math.max(Number(settings.fees) || 0, 0), 0.95);
   const finish = (raw) => {
     const withFees = raw / (1 - fees);
-    return { raw: round2(raw), with_fees: round2(withFees), price: round2(roundTo(withFees, Number(settings.round_to) || 0)) };
+    return { raw: round2(raw), with_fees: round2(withFees), price: round2(roundTo(withFees, Number(settings.round_to) || 0, settings.round_mode)) };
   };
 
   const factor = Number(settings.cost_plus.factor) || 1;

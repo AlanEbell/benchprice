@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS = {
   },
   fees: 0, // share of the price that goes to card processing, a marketplace, etc.
   round_to: 1,
+  round_mode: 'up', // or 'nearest' or 'down'
 };
 
 /** A user-facing problem (bad input, missing file). Its message is shown as is. */
@@ -100,7 +101,7 @@ function labelItems(items) {
 
 // ----- the files -----------------------------------------------------------
 
-const CSV_FIELDS = ['item_id', 'name', 'type', 'sku', 'status', 'finished_at', 'quantity', 'hours_per_piece', 'metal', 'weight_grams',
+const CSV_FIELDS = ['item_id', 'name', 'type', 'sku', 'status', 'finished_at', 'quantity', 'piece_ids', 'hours_per_piece', 'metal', 'weight_grams',
   'metal_cost', 'components', 'components_cost', 'materials', 'labor', 'price_cost_plus', 'price_loaded', 'price_tiered', 'method', 'price', 'notes'];
 
 function csvCell(value) {
@@ -187,6 +188,10 @@ class PriceBook {
     }
     if (changes.fees !== undefined) next.fees = num(changes.fees, 'Fees', { min: 0, max: 0.95 });
     if (changes.round_to !== undefined) next.round_to = num(changes.round_to, 'Round to', { min: 0 });
+    if (changes.round_mode !== undefined) {
+      if (!['up', 'nearest', 'down'].includes(changes.round_mode)) throw new PricingError('Rounding has to go up, to the nearest, or down.');
+      next.round_mode = changes.round_mode;
+    }
     writeJson(this.settingsFile, next);
     return next;
   }
@@ -230,7 +235,64 @@ class PriceBook {
     return settings.overhead_share === null || settings.overhead_share === undefined ? this.measuredOverheadShare() : Number(settings.overhead_share);
   }
 
-  // ----- what BenchPrice knows about a piece ----------------------------
+  // ----- sets -----------------------------------------------------------
+
+  /**
+   * Pieces BenchClock added together are one set and carry one price; a piece added on its
+   * own, or a custom piece, is priced alone. The key is what the pricing file is named after.
+   */
+  static groupKey(item) { return item.batch_id && item.type !== 'custom' ? item.batch_id : item.id; }
+
+  /**
+   * Every set or single piece, with the pieces in it. The making time is the average per piece
+   * over the finished ones (over all of them while none is finished), so the whole set prices
+   * the same. Finished sets only, unless `includeBench`; a set counts as finished once any
+   * piece in it is, and then the ones still on the bench are listed but don't change the price.
+   */
+  listGroups({ includeBench = false } = {}) {
+    const groups = new Map();
+    for (const item of this.listItems()) {
+      const key = PriceBook.groupKey(item);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    const settings = this.settings();
+    const share = this.overheadShare(settings);
+    return [...groups].map(([key, members]) => {
+      members.sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+      const finished = members.filter((i) => i.status === 'finished');
+      const timed = finished.length ? finished : members;
+      const quantity = (list) => list.reduce((n, i) => n + (i.quantity || 1), 0);
+      const perPiece = quantity(timed) ? timed.reduce((n, i) => n + (i.total_seconds || 0), 0) / quantity(timed) : 0;
+      const first = members[0];
+      const pricing = this.pricingFor(key, members);
+      const group = {
+        id: key, set: members.length > 1 || first.quantity > 1, name: first.name, label: first.name, type: first.type, photo: first.photo,
+        sku: first.sku, notes: first.notes, status: finished.length === members.length ? 'finished' : finished.length ? 'part_finished' :
+          members.some((i) => i.status === 'in_progress') ? 'in_progress' : 'not_started',
+        finished_at: finished.map((i) => i.finished_at).sort().at(-1) || null,
+        quantity: quantity(members), finished: quantity(finished), seconds_per_piece: Math.round(perPiece * 10) / 10,
+        pieces: members.map((i) => ({ id: i.id, label: i.label, status: i.status, finished_at: i.finished_at, quantity: i.quantity, total_seconds: i.total_seconds })),
+        pricing,
+      };
+      group.priced = price(group, pricing, settings, share);
+      return group;
+    })
+      .filter((g) => includeBench || g.finished > 0)
+      .sort((a, b) => (b.finished > 0) - (a.finished > 0) || (b.finished_at || '').localeCompare(a.finished_at || '') ||
+        a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'en', { numeric: true }));
+  }
+
+  /** A set's pricing is filed under its key; a set that was priced piece by piece before sets existed keeps its first piece's. */
+  pricingFor(key, members) {
+    if (!fs.existsSync(this.pricedPath(key))) {
+      const priced = members.find((i) => i.id !== key && fs.existsSync(this.pricedPath(i.id)));
+      if (priced) return { ...this.getPricing(priced.id), item_id: key };
+    }
+    return this.getPricing(key);
+  }
+
+  // ----- what BenchPrice knows about a piece or set -----------------------
 
   pricedPath(itemId) {
     if (!/^[\w-]+$/.test(String(itemId))) throw new PricingError(`No piece with id ${itemId}`);
@@ -269,24 +331,12 @@ class PriceBook {
     return next;
   }
 
-  /** Every piece with its pricing and its prices worked out. Finished pieces only, unless `includeBench`. */
-  listPieces({ includeBench = false } = {}) {
-    const settings = this.settings();
-    const share = this.overheadShare(settings);
-    return this.listItems()
-      .filter((item) => includeBench || item.status === 'finished')
-      .map((item) => {
-        const pricing = this.getPricing(item.id);
-        return { ...item, pricing, priced: price(item, pricing, settings, share) };
-      });
-  }
-
-  /** Write a price sheet of the pieces with these ids (every finished piece when `ids` is empty). Returns the row count. */
+  /** Write a price sheet, one row per set or single piece, of these ids (every finished one when `ids` is empty). Returns the row count. */
   exportCsv(file, ids = []) {
     const wanted = new Set(ids);
-    const pieces = this.listPieces({ includeBench: wanted.size > 0 }).filter((p) => !wanted.size || wanted.has(p.id));
-    const rows = pieces.map(({ priced: p, ...item }) => [
-      item.id, item.label, item.type, item.sku, item.status, item.finished_at || '', item.quantity, p.hours,
+    const groups = this.listGroups({ includeBench: wanted.size > 0 }).filter((g) => !wanted.size || wanted.has(g.id));
+    const rows = groups.map(({ priced: p, ...item }) => [
+      item.id, item.label, item.type, item.sku, item.status, item.finished_at || '', item.quantity, item.pieces.map((i) => i.id).join('; '), p.hours,
       p.metal ? p.metal.name : '', p.weight_grams, p.metal_cost, p.components.map((c) => `${c.quantity} x ${c.name} @ ${c.unit_cost}`).join('; '),
       p.components_cost, p.materials, p.labor, p.methods[1].price, p.methods[2].price, p.methods[3].price, p.method, p.price, item.pricing.notes,
     ]);

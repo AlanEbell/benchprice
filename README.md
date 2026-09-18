@@ -8,6 +8,9 @@ works out a price three ways. A desktop app for Linux, Windows and macOS.
 
 - **Finished pieces** come straight from BenchClock, with their making time per piece. Tick
   *Show the bench too* to price pieces that are still being made, for a quote.
+- **Sets carry one price.** Pieces added together in BenchClock (*Moonstone ring x3*) are one
+  line here, priced once on the average making time of the finished ones, so every piece in
+  the set sells for the same. A custom piece is always priced on its own.
 - **Price** on a line opens the piece: its metal and weight in grams, and a list of stones,
   findings and anything else bought in, at what you paid. The prices update as you type, and
   the box shows how each was arrived at. Press a method's card to price this piece that way
@@ -19,7 +22,8 @@ works out a price three ways. A desktop app for Linux, Windows and macOS.
      TimeOverhead share is measured from BenchClock's files and can be overridden.
   3. **Tiered materials**: each material marked up by its cost band (cheap findings more,
      expensive stones less), plus labor and a studio overhead per hour, then a margin.
-  Selling fees and rounding are applied to all three, last.
+  Selling fees and rounding (to the nearest $5, say, going up, to the nearest or down) are applied
+  to all three, last.
 - **Metal prices** come from spot prices per troy ounce that you keep current in *Settings*,
   by purity and your supplier's premium over spot. Gold-filled, brass and anything else can be
   given a price per gram instead.

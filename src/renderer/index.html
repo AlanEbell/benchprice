@@ -28,7 +28,7 @@
     <label class="check"><input type="checkbox" id="showBench"> Show the bench too</label>
   </div>
   <div class="list" id="pieces"></div>
-  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings. Ticks pick the pieces for <b>Save price sheet</b>.
+  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. Ticks pick the lines for <b>Save price sheet</b>.
     The time on each piece comes from BenchClock; press <kbd>F5</kbd> after finishing something there.</p>
 
   <footer>Pricing is saved as plain files in <button class="link" id="dataDir"></button>, beside your BenchClock time card.</footer>
@@ -134,7 +134,13 @@
     <div class="field-label">Applied to every method, last</div>
     <div class="three">
       <div><label for="sFees">Selling fees <span class="muted">- cards, marketplace</span></label><div class="unit-field"><input type="number" id="sFees" min="0" max="95" step="0.5"><span class="unit">%</span></div></div>
-      <div><label for="sRound">Round up to the nearest</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sRound" min="0" step="1"></div></div>
+      <div><label for="sRound">Round prices to <span class="muted">- $5 for $270, $275&hellip;; $1 for whole dollars; 0 for cents</span></label><div class="unit-field"><span class="unit">$</span><input type="number" id="sRound" min="0" step="1"></div></div>
+      <div><div class="field-label">Rounding goes</div>
+        <div class="segmented" role="radiogroup" aria-label="Rounding direction">
+          <label><input type="radio" name="sRoundMode" value="up"><span>Up</span></label>
+          <label><input type="radio" name="sRoundMode" value="nearest"><span>Nearest</span></label>
+          <label><input type="radio" name="sRoundMode" value="down"><span>Down</span></label>
+        </div></div>
     </div>
 
     <div class="actions">

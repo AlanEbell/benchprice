@@ -40,6 +40,11 @@ test('metal price per gram comes from spot, purity and premium', () => {
   assert.equal(roundTo(273.14, 1), 274);
   assert.equal(roundTo(273.14, 5), 275);
   assert.equal(roundTo(273.14, 0), 273.14);
+  assert.equal(roundTo(273.14, 5, 'nearest'), 275);
+  assert.equal(roundTo(272.49, 5, 'nearest'), 270);
+  assert.equal(roundTo(279.99, 5, 'down'), 275);
+  assert.equal(roundTo(280, 5, 'down'), 280);
+  assert.equal(roundTo(280, 5, 'up'), 280);
 });
 
 test('the three methods on the moonstone ring', () => {
@@ -61,6 +66,8 @@ test('the three methods on the moonstone ring', () => {
   // fees and rounding come last
   const fees = price(item, pricing, { ...settings, fees: 0.06, round_to: 5 }, 0.3);
   assert.deepEqual([fees.methods[2].with_fees, fees.methods[2].price], [290.66, 295]);
+  assert.equal(price(item, pricing, { ...settings, fees: 0.06, round_to: 5, round_mode: 'down' }, 0.3).methods[2].price, 290);
+  assert.equal(price(item, pricing, { ...settings, fees: 0.06, round_to: 5, round_mode: 'nearest' }, 0.3).methods[2].price, 290);
   assert.equal(price(item, {}, settings, 0.3).complete, false);
 });
 
@@ -79,12 +86,14 @@ test('settings are checked and keep their defaults for anything not saved', () =
   const s = book.settings();
   assert.deepEqual([s.labor_rate, s.spot.silver, s.spot.gold, s.loaded.margin, s.default_method], [65, 30, 2400, 0.25, 2]);
   for (const bad of [{ labor_rate: 'lots' }, { labor_rate: -1 }, { default_method: 4 }, { loaded: { margin: 1 } }, { metals: [] },
-    { metals: [{ name: 'Gold', base: 'lead', purity: 0.5 }] }, { fees: 2 }]) {
+    { metals: [{ name: 'Gold', base: 'lead', purity: 0.5 }] }, { fees: 2 }, { round_mode: 'sideways' }]) {
     assert.throws(() => book.saveSettings(bad), PricingError);
   }
   assert.equal(book.settings().labor_rate, 65, 'a refused change saves nothing');
   book.saveSettings({ metals: [{ name: 'Argentium', base: 'silver', purity: 0.935, premium: 0.2 }, { name: 'Titanium', per_gram: 0.3 }] });
   assert.deepEqual(book.settings().metals.map((m) => m.id), ['argentium', 'titanium']);
+  book.saveSettings({ round_to: 5, round_mode: 'nearest' });
+  assert.deepEqual([book.settings().round_to, book.settings().round_mode], [5, 'nearest']);
   book.saveSettings({ tiered: { tiers: [{ up_to: 50, factor: 2.5 }, { up_to: 5, factor: 3 }] } });
   assert.deepEqual(book.settings().tiered.tiers, [{ up_to: 5, factor: 3 }, { up_to: 50, factor: 2.5 }, { up_to: null, factor: 2.5 }]);
 });
@@ -108,15 +117,50 @@ test('pricing a piece is saved beside BenchClock without touching its files', ()
 
 test('the list is finished pieces first with prices, and the bench on request', () => {
   book.savePricing('moonstone-ring-1', { metal: 'sterling', weight_grams: 4.2, components: [{ name: 'Moonstone', quantity: 1, unit_cost: 30 }] });
-  const finished = book.listPieces();
+  const finished = book.listGroups();
   assert.deepEqual(finished.map((p) => p.label), ['Moonstone ring']);
   assert.equal(finished[0].priced.metal_cost, 4.6); // 4.2 g x 1.0944
   assert.ok(finished[0].priced.price > 250);
-  const all = book.listPieces({ includeBench: true });
+  assert.equal(finished[0].set, false);
+  const all = book.listGroups({ includeBench: true });
   assert.deepEqual(all.map((p) => p.label), ['Moonstone ring', 'Cuff', 'Hoops']);
   const hoops = all.find((p) => p.id === 'hoops-1');
-  assert.equal(hoops.priced.hours, 0.5, 'a batch is priced per piece');
+  assert.deepEqual([hoops.priced.hours, hoops.set, hoops.quantity], [0.5, true, 4], 'an old-style batch entry is priced per piece');
   assert.equal(hoops.priced.complete, false);
+});
+
+test('pieces added together are one set with one price; custom pieces stand alone', () => {
+  const item = (extra) => ({
+    schema_version: 1, sku: '', type: 'ring', photo: null, quantity: 1, notes: '', created_at: '2026-09-01T09:00:00-04:00',
+    started_at: '2026-09-01T09:00:00-04:00', finished_at: null, split_from: null, time_entries: [], ...extra,
+  });
+  const write = (it) => fs.writeFileSync(path.join(dir, 'items', `${it.id}.json`), JSON.stringify(it));
+  write(item({ id: 'band-a', sequence: 10, name: 'Band', batch_id: 'batch-x', status: 'finished', finished_at: '2026-09-11T10:00:00-04:00', total_seconds: 3600, seconds_per_piece: 3600 }));
+  write(item({ id: 'band-b', sequence: 11, name: 'Band', batch_id: 'batch-x', status: 'finished', finished_at: '2026-09-13T10:00:00-04:00', total_seconds: 5400, seconds_per_piece: 5400 }));
+  write(item({ id: 'band-c', sequence: 12, name: 'Band', batch_id: 'batch-x', status: 'in_progress', total_seconds: 600, seconds_per_piece: 600 }));
+  write(item({ id: 'band-d', sequence: 13, name: 'Band', batch_id: 'batch-x', type: 'custom', status: 'finished', finished_at: '2026-09-13T12:00:00-04:00', total_seconds: 9000, seconds_per_piece: 9000 }));
+  const groups = book.listGroups();
+  const set = groups.find((g) => g.id === 'batch-x');
+  assert.ok(set, 'the set is filed under its batch id');
+  assert.deepEqual([set.set, set.quantity, set.finished, set.status, set.finished_at], [true, 3, 2, 'part_finished', '2026-09-13T10:00:00-04:00']);
+  assert.equal(set.seconds_per_piece, 4500, 'the average over the finished pieces; the one on the bench does not drag it down');
+  assert.deepEqual(set.pieces.map((i) => i.id), ['band-a', 'band-b', 'band-c']);
+  const custom = groups.find((g) => g.id === 'band-d');
+  assert.deepEqual([custom.set, custom.seconds_per_piece], [false, 9000], 'a custom piece is priced on its own');
+  book.savePricing('batch-x', { metal: 'sterling', weight_grams: 3 });
+  assert.ok(fs.existsSync(path.join(dir, 'pricing', 'items', 'batch-x.json')));
+  const priced = book.listGroups().find((g) => g.id === 'batch-x');
+  assert.equal(priced.priced.hours, 1.25);
+  assert.ok(priced.priced.complete);
+  // a set priced piece by piece before sets existed keeps that pricing until the set is saved
+  fs.rmSync(path.join(dir, 'pricing', 'items', 'batch-x.json'));
+  book.savePricing('band-b', { metal: 'gold-14k', weight_grams: 2 });
+  assert.equal(book.listGroups().find((g) => g.id === 'batch-x').pricing.metal, 'gold-14k');
+  const out = path.join(dir, 'sets.csv');
+  book.exportCsv(out, ['batch-x']);
+  const [header, row] = fs.readFileSync(out, 'utf8').trim().split('\r\n').map((line) => line.split(','));
+  assert.equal(row[header.indexOf('quantity')], '3');
+  assert.equal(row[header.indexOf('piece_ids')], 'band-a; band-b; band-c');
 });
 
 test('a folder without BenchClock in it is empty, not an error', () => {
@@ -124,7 +168,7 @@ test('a folder without BenchClock in it is empty, not an error', () => {
   try {
     const lonely = new PriceBook(empty);
     assert.equal(lonely.hasBenchClock(), false);
-    assert.deepEqual(lonely.listPieces(), []);
+    assert.deepEqual(lonely.listGroups(), []);
     assert.equal(lonely.measuredOverheadShare(), 0);
   } finally { fs.rmSync(empty, { recursive: true, force: true }); }
 });
@@ -134,8 +178,8 @@ test('CSV price sheet', () => {
   const out = path.join(dir, 'prices.csv');
   assert.equal(book.exportCsv(out), 1);
   const [header, row] = fs.readFileSync(out, 'utf8').trim().split('\r\n');
-  assert.ok(header.startsWith('item_id,name,type,sku,status,finished_at,quantity,hours_per_piece,metal,weight_grams'));
-  assert.ok(row.startsWith('moonstone-ring-1,Moonstone ring,ring,,finished,2026-09-10T15:00:00-04:00,1,2.5,Sterling silver,4.2,4.6,'));
+  assert.ok(header.startsWith('item_id,name,type,sku,status,finished_at,quantity,piece_ids,hours_per_piece,metal,weight_grams'));
+  assert.ok(row.startsWith('moonstone-ring-1,Moonstone ring,ring,,finished,2026-09-10T15:00:00-04:00,1,moonstone-ring-1,2.5,Sterling silver,4.2,4.6,'));
   assert.ok(row.includes('"1 x Moonstone, ""AAA"" @ 30"'));
   assert.equal(book.exportCsv(out, ['hoops-1', 'moonstone-ring-1']), 2, 'chosen pieces can be on the bench');
 });

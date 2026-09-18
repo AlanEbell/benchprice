@@ -20,7 +20,7 @@ function buildState({ includeBench = false } = {}) {
     settings,
     measuredOverhead: book.measuredOverheadShare(),
     overheadShare: book.overheadShare(settings),
-    pieces: book.listPieces({ includeBench }),
+    groups: book.listGroups({ includeBench }),
     methods: METHODS,
     dataDir: book.dataDir,
     app: { version, electron: process.versions.electron },

@@ -34,13 +34,15 @@ app.on('browser-window-created', (event, win) => {
       await pause(600);
       assert.equal(await run('return typeof price'), 'function', 'the arithmetic is loaded in the page');
       const rows = await run("return [...document.querySelectorAll('#pieces .row b')].map((b) => b.textContent)");
-      assert.deepEqual(rows, ['Hoop earrings', 'Moonstone ring (2 of 2)', 'Moonstone ring (1 of 2)'], 'finished pieces, newest first');
+      assert.deepEqual(rows, ['Hoop earrings', 'Moonstone ring'], 'finished sets and singles, newest first; a set is one line');
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .meta').textContent"), /2h 08m each · a set, one price/); // (9000 + 6300) / 2
       assert.match(await run("return $('strip').textContent"), /30\.1% TimeOverhead/); // 12000 / (12000 + 27900)
       await shot('1-main-empty');
 
       // price a ring: sterling, 4.2 g, a stone and some findings
-      await run("document.querySelector('#pieces .row[data-id=moonstone-ring-a] [data-act=price]').click()");
+      await run("document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click()");
       assert.equal(await run("return $('pieceDlg').open"), true);
+      assert.match(await run("return $('pieceHint').textContent"), /A set of 2: every piece carries the same price/);
       await run(`$('pMetal').value = 'sterling'; $('pWeight').value = '4.2';
                  $('partAdd').click(); $('partAdd').click();
                  const rows = $('partRows').children;
@@ -55,39 +57,40 @@ app.on('browser-window-created', (event, win) => {
       await run("document.querySelector('#methodCards [data-method=\"3\"]').click()");
       assert.equal(await run("return $('pMethod').value"), '3');
       await run("document.querySelector('#pieceForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));");
-      const saved = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'moonstone-ring-a.json'), 'utf8'));
+      const saved = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json'), 'utf8'));
       assert.deepEqual([saved.metal, saved.weight_grams, saved.method, saved.notes, saved.components.length], ['sterling', 4.2, 3, 'Bezel set', 2]);
       assert.deepEqual(saved.components[1], { name: 'Jump rings', quantity: 4, unit_cost: 0.25 });
       assert.equal(fs.readdirSync(path.join(dataDir, 'items')).length, 5, "BenchClock's folder is untouched");
-      assert.match(await run("return document.querySelector('#pieces .row[data-id=moonstone-ring-a] .prices .chosen small').textContent"), /Tiered/);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen small').textContent"), /Tiered/);
       await shot('3-main-priced');
 
       // settings: a new rate and a silver price change every price
-      const before = await run("return document.querySelector('#pieces .row[data-id=moonstone-ring-a] .prices .chosen').textContent");
+      const before = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent");
       await run("$('settingsBtn').click(); await new Promise((r) => setTimeout(r, 200));");
       assert.equal(await run("return $('settingsDlg').open && $('sRate').value"), '50');
       assert.equal(await run("return $('metalRows').children.length"), 9);
       await shot('4-settings');
-      await run("$('sRate').value = '60'; $('sSilver').value = '40'; $('sOverhead').value = '35'; document.querySelector('input[name=sMethod][value=\"1\"]').checked = true;");
+      await run("$('sRate').value = '60'; $('sSilver').value = '40'; $('sOverhead').value = '35'; $('sRound').value = '5'; document.querySelector('input[name=sMethod][value=\"1\"]').checked = true; document.querySelector('input[name=sRoundMode][value=nearest]').checked = true;");
       await run("document.querySelector('#settingsForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));");
       const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'settings.json'), 'utf8'));
-      assert.deepEqual([settings.labor_rate, settings.spot.silver, settings.overhead_share, settings.default_method, settings.metals.length], [60, 40, 0.35, 1, 9]);
+      assert.deepEqual([settings.labor_rate, settings.spot.silver, settings.overhead_share, settings.default_method, settings.metals.length, settings.round_to, settings.round_mode], [60, 40, 0.35, 1, 9, 5, 'nearest']);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), /\$\d+[05]$/, 'a multiple of $5');
       assert.match(await run("return $('strip').textContent"), /35% TimeOverhead.*set by hand; BenchClock says 30\.1%/);
-      const after = await run("return document.querySelector('#pieces .row[data-id=moonstone-ring-a] .prices .chosen').textContent");
+      const after = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent");
       assert.notEqual(before, after);
       assert.match(await run("return document.querySelector('#pieces .row[data-id=hoops] .prices').textContent"), /no weight or materials yet/);
 
       // the bench, ticks, and the price sheet
       await run("$('showBench').checked = true; $('showBench').onchange(); await new Promise((r) => setTimeout(r, 300));");
-      assert.equal(await run("return document.querySelectorAll('#pieces .row').length"), 4);
-      await run("document.querySelector('#pieces .row[data-id=pendant] input').click(); document.querySelector('#pieces .row[data-id=moonstone-ring-a] input').click();");
+      assert.equal(await run("return document.querySelectorAll('#pieces .row').length"), 3);
+      await run("document.querySelector('#pieces .row[data-id=pendant] input').click(); document.querySelector('#pieces .row[data-id=batch-1] input').click();");
       assert.equal(await run("return $('exportBtn').textContent"), 'Save price sheet (2)');
       const { PriceBook } = require('../src/core/pricing.js');
       const csv = path.join(dataDir, 'sheet.csv');
       assert.equal(new PriceBook(dataDir).exportCsv(csv, await run('return [...selected]')), 2);
       const lines = fs.readFileSync(csv, 'utf8').trim().split('\r\n');
       assert.equal(lines.length, 3);
-      assert.ok(lines.some((l) => l.startsWith('moonstone-ring-a,Moonstone ring (1 of 2),ring,,finished,')));
+      assert.ok(lines.some((l) => l.startsWith('batch-1,Moonstone ring,ring,,finished,2026-09-12T15:00:00-04:00,2,moonstone-ring-a; moonstone-ring-b,')), lines.join('\n'));
       // the menu reaches the page, and is ignored while a box is open
       win.webContents.send('menu', 'about');
       await pause(300);
