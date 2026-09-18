@@ -1,0 +1,60 @@
+# BenchPrice
+
+A price for each finished piece on your [BenchClock](https://github.com/AlanEbell/benchclock)
+time card. BenchClock knows how long a piece took; BenchPrice adds what it is made of and
+works out a price three ways. A desktop app for Linux, Windows and macOS.
+
+## Using it
+
+- **Finished pieces** come straight from BenchClock, with their making time per piece. Tick
+  *Show the bench too* to price pieces that are still being made, for a quote.
+- **Price** on a line opens the piece: its metal and weight in grams, and a list of stones,
+  findings and anything else bought in, at what you paid. The prices update as you type, and
+  the box shows how each was arrived at. Press a method's card to price this piece that way
+  instead of the default.
+- **Three methods**, side by side:
+  1. **Cost-plus**: materials plus labor, times a factor (2 to start).
+  2. **Loaded hourly** (the default): your hourly rate divided by the share of clocked time
+     that is making, so the making hours carry the TimeOverhead, then a profit margin. The
+     TimeOverhead share is measured from BenchClock's files and can be overridden.
+  3. **Tiered materials**: each material marked up by its cost band (cheap findings more,
+     expensive stones less), plus labor and a studio overhead per hour, then a margin.
+  Selling fees and rounding are applied to all three, last.
+- **Metal prices** come from spot prices per troy ounce that you keep current in *Settings*,
+  by purity and your supplier's premium over spot. Gold-filled, brass and anything else can be
+  given a price per gram instead.
+- **Save price sheet** writes a CSV of the ticked pieces (or every finished piece) with all
+  three prices, the chosen one, and the cost breakdown.
+- **Settings** (Ctrl+,) holds the labor rate, default method, spot prices, metals, and the
+  numbers behind each method.
+
+## Where it keeps things
+
+BenchPrice reads BenchClock's data folder and never writes to BenchClock's own files. Its own
+files live in a `pricing` folder inside it:
+
+```
+<BenchClock data folder>/pricing/settings.json    labor rate, spot prices, metals, the three methods
+<BenchClock data folder>/pricing/items/<id>.json  metal, weight, stones and findings for one piece
+```
+
+The data folder is the one BenchClock uses (`~/.local/share/BenchClock`, `%APPDATA%\BenchClock`,
+`~/Library/Application Support/BenchClock`), and the same `BENCHCLOCK_DATA_DIR` variable or
+`--data-dir=<folder>` argument moves it. Backing up that folder backs up both apps.
+
+## Development
+
+Needs [Node.js](https://nodejs.org) 22 or newer.
+
+    npm install
+    npm start                 # run the app
+    npm test                  # the arithmetic and the files (no window needed)
+
+- `src/core/arithmetic.js` - the three methods, pure arithmetic. Loaded by the window too.
+- `src/core/pricing.js` - settings, per-piece files, reading BenchClock's pieces, the CSV.
+- `src/main/` - the Electron main process: window, menu bar, file dialogs.
+- `src/renderer/` - the window itself. `styles.css` and `icons.js` are shared with BenchClock.
+
+## License
+
+[MIT](LICENSE).

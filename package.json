@@ -1,0 +1,18 @@
+{
+  "name": "benchprice",
+  "productName": "BenchPrice",
+  "version": "0.1.0",
+  "description": "BenchPrice, a pricing sheet for BenchClock: weight, metal, stones and findings, and a price for each finished piece.",
+  "author": "AlanEbell <13323211+AlanEbell@users.noreply.github.com>",
+  "license": "MIT",
+  "private": true,
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "smoke": "electron scripts/smoke.js"
+  },
+  "devDependencies": {
+    "electron": "^44.4.1"
+  }
+}

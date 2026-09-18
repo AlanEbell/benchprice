@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' bench-photo:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BenchPrice</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="price.css">
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>BenchPrice</h1>
+    <span class="spacer"></span>
+    <button id="settingsBtn" title="Labor rate, spot prices, metals and the three pricing methods">Settings</button>
+    <button id="exportBtn" title="A CSV of the ticked pieces, or every finished piece, with all three prices">Save price sheet</button>
+  </header>
+
+  <section class="strip" id="strip"></section>
+
+  <div class="section-head">
+    <h2 id="listTitle">Finished pieces <small id="pieceCount"></small></h2>
+    <span class="spacer"></span>
+    <span id="selCount" class="muted"></span>
+    <button id="clearSel" class="quiet" hidden>Untick all</button>
+    <label class="check"><input type="checkbox" id="showBench"> Show the bench too</label>
+  </div>
+  <div class="list" id="pieces"></div>
+  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings. Ticks pick the pieces for <b>Save price sheet</b>.
+    The time on each piece comes from BenchClock; press <kbd>F5</kbd> after finishing something there.</p>
+
+  <footer>Pricing is saved as plain files in <button class="link" id="dataDir"></button>, beside your BenchClock time card.</footer>
+</main>
+
+<dialog id="pieceDlg">
+  <form method="dialog" id="pieceForm" autocomplete="off">
+    <h2 id="pieceTitle"></h2>
+    <p class="hint" id="pieceHint"></p>
+    <div class="two">
+      <div>
+        <label for="pMetal">Metal</label>
+        <select id="pMetal"></select>
+      </div>
+      <div>
+        <label for="pWeight">Weight of the metal <span class="muted">- grams, per piece</span></label>
+        <div class="unit-field"><input type="number" id="pWeight" min="0" step="0.01" placeholder="0"><span class="unit">g</span></div>
+      </div>
+    </div>
+
+    <div class="field-label">Stones, findings and anything else bought in <span class="muted">- at what you paid, per piece</span></div>
+    <table class="parts" id="parts">
+      <thead><tr><th>What</th><th class="num">How many</th><th class="num">Each</th><th class="num">Cost</th><th></th></tr></thead>
+      <tbody id="partRows"></tbody>
+    </table>
+    <button type="button" class="quiet" id="partAdd">+ Add a line</button>
+
+    <div class="two">
+      <div>
+        <label for="pMethod">Price by</label>
+        <select id="pMethod"></select>
+      </div>
+      <div>
+        <label for="pNotes">Notes</label>
+        <input type="text" id="pNotes" placeholder="e.g. bezel set, 8 mm cabochon">
+      </div>
+    </div>
+
+    <div class="breakdown" id="breakdown"></div>
+    <div class="methods" id="methodCards"></div>
+
+    <div class="actions">
+      <span class="spacer"></span>
+      <button type="button" id="pieceCancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDlg">
+  <form method="dialog" id="settingsForm" autocomplete="off">
+    <h2>Settings</h2>
+    <div class="two">
+      <div>
+        <label for="sRate">Your labor rate <span class="muted">- dollars an hour of making</span></label>
+        <div class="unit-field"><span class="unit">$</span><input type="number" id="sRate" min="0" step="0.01"></div>
+      </div>
+      <div>
+        <label for="sOverhead">TimeOverhead share <span class="muted">- leave blank to use BenchClock's figure</span></label>
+        <div class="unit-field"><input type="number" id="sOverhead" min="0" max="95" step="0.1" placeholder=""><span class="unit">%</span></div>
+      </div>
+    </div>
+
+    <div class="field-label">Price by, unless a piece says otherwise</div>
+    <div class="segmented" id="sMethods" role="radiogroup"></div>
+
+    <div class="field-label">Spot prices <span class="muted">- dollars a troy ounce; they move daily and are yours to keep current</span></div>
+    <div class="three">
+      <div><label for="sSilver">Silver</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sSilver" min="0" step="0.01"></div></div>
+      <div><label for="sGold">Gold</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sGold" min="0" step="0.01"></div></div>
+      <div><label for="sPlatinum">Platinum</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sPlatinum" min="0" step="0.01"></div></div>
+    </div>
+
+    <div class="field-label">Metals <span class="muted">- priced from spot by purity and the premium your supplier charges over spot, or by a price per gram</span></div>
+    <table class="parts metals" id="metalsTable">
+      <colgroup><col class="what"><col class="from"><col><col><col><col class="x"></colgroup>
+      <thead><tr><th>Name</th><th>From</th><th class="num">Purity</th><th class="num">Premium</th><th class="num">Per gram</th><th></th></tr></thead>
+      <tbody id="metalRows"></tbody>
+    </table>
+    <button type="button" class="quiet" id="metalAdd">+ Add a metal</button>
+
+    <details class="method-settings" open>
+      <summary><b>1. Cost-plus</b> <span class="muted">materials and labor, times a factor</span></summary>
+      <div class="three">
+        <div><label for="sFactor">Factor</label><div class="unit-field"><span class="unit">&times;</span><input type="number" id="sFactor" min="1" step="0.05"></div></div>
+      </div>
+    </details>
+    <details class="method-settings" open>
+      <summary><b>2. Loaded hourly</b> <span class="muted">labor carries the TimeOverhead share, then a profit margin</span></summary>
+      <div class="three">
+        <div><label for="sMargin2">Profit margin</label><div class="unit-field"><input type="number" id="sMargin2" min="0" max="95" step="1"><span class="unit">%</span></div></div>
+      </div>
+    </details>
+    <details class="method-settings" open>
+      <summary><b>3. Tiered materials</b> <span class="muted">each material marked up by its cost band, plus labor and studio overhead, then a margin</span></summary>
+      <div class="tiers" id="tiers"></div>
+      <div class="three">
+        <div><label for="sStudio">Studio overhead <span class="muted">- per hour</span></label><div class="unit-field"><span class="unit">$</span><input type="number" id="sStudio" min="0" step="0.5"></div></div>
+        <div><label for="sMargin3">Profit margin</label><div class="unit-field"><input type="number" id="sMargin3" min="0" max="95" step="1"><span class="unit">%</span></div></div>
+      </div>
+    </details>
+
+    <div class="field-label">Applied to every method, last</div>
+    <div class="three">
+      <div><label for="sFees">Selling fees <span class="muted">- cards, marketplace</span></label><div class="unit-field"><input type="number" id="sFees" min="0" max="95" step="0.5"><span class="unit">%</span></div></div>
+      <div><label for="sRound">Round up to the nearest</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sRound" min="0" step="1"></div></div>
+    </div>
+
+    <div class="actions">
+      <span class="spacer"></span>
+      <button type="button" id="settingsCancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="aboutDlg">
+  <div class="about">
+    <img src="icon.png" alt="" width="84" height="84">
+    <h2>BenchPrice</h2>
+    <p class="version" id="aboutVersion"></p>
+    <p>A price for each finished piece on your BenchClock time card: its time, its metal by weight, its stones and findings, three ways.</p>
+    <p class="hint" id="aboutDetail"></p>
+  </div>
+  <div class="actions"><span class="spacer"></span><button type="button" class="primary" id="aboutClose">Close</button></div>
+</dialog>
+
+<div id="toast" hidden></div>
+<script src="icons.js"></script>
+<script src="../core/arithmetic.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
