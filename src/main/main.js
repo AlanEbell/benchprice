@@ -33,6 +33,7 @@ const api = {
   state: ({ includeBench: wanted } = {}) => { if (wanted !== undefined) includeBench = !!wanted; return null; },
   saveSettings: (changes) => book.saveSettings(changes),
   savePricing: ({ id, ...changes }) => book.savePricing(id, changes),
+  confirmPrice: ({ id, ...changes }) => book.confirmPrice(id, changes),
   clearPricing: ({ id }) => book.clearPricing(id),
 
   async exportCsv({ ids = [] } = {}) {

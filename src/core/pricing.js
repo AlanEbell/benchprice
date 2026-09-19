@@ -102,7 +102,8 @@ function labelItems(items) {
 // ----- the files -----------------------------------------------------------
 
 const CSV_FIELDS = ['item_id', 'name', 'type', 'sku', 'status', 'finished_at', 'quantity', 'piece_ids', 'hours_per_piece', 'metal', 'weight_grams',
-  'metal_cost', 'components', 'components_cost', 'materials', 'labor', 'price_cost_plus', 'price_loaded', 'price_tiered', 'method', 'price', 'notes'];
+  'metal_cost', 'components', 'components_cost', 'materials', 'labor', 'price_cost_plus', 'price_loaded', 'price_tiered', 'method', 'price',
+  'confirmed_at', 'price_now', 'notes'];
 
 function csvCell(value) {
   const text = String(value ?? '');
@@ -243,6 +244,33 @@ class PriceBook {
    */
   static groupKey(item) { return item.batch_id && item.type !== 'custom' ? item.batch_id : item.id; }
 
+  /**
+   * Save what was entered, then write the price itself into the file: the figure, how it was
+   * reached and when. That is the piece's price from now on, whatever spot prices and settings
+   * do later, until it is confirmed again (repriced) or cleared.
+   */
+  confirmPrice(itemId, changes = {}) {
+    this.savePricing(itemId, changes);
+    const group = this.listGroups({ includeBench: true }).find((g) => g.id === itemId);
+    if (!group) throw new PricingError(`No piece or set with id ${itemId} in BenchClock.`);
+    const p = group.priced;
+    if (!p.complete) throw new PricingError('Enter a weight, some materials, or a price of your own before confirming.');
+    const settings = this.settings();
+    const chosen = p.by_hand ? null : p.methods[p.method];
+    const confirmed = {
+      price: p.live_price, method: p.by_hand ? 'by hand' : p.method, method_name: p.by_hand ? 'Set by hand' : METHODS[p.method].name,
+      at: new Date().toISOString(), per_piece: true, pieces: group.quantity,
+      hours: p.hours, rate: p.rate, labor: p.labor, overhead_share: chosen && chosen.overhead_share !== undefined ? chosen.overhead_share : null,
+      metal: p.metal ? { id: p.metal.id, name: p.metal.name, per_gram: p.metal.per_gram } : null, weight_grams: p.weight_grams, metal_cost: p.metal_cost,
+      components: p.components.map((c) => ({ name: c.name, quantity: c.quantity, unit_cost: c.unit_cost, total: c.total })), components_cost: p.components_cost,
+      materials: p.materials, method_price: p.by_hand ? p.methods[p.method].price : null,
+      fees: p.fees, round_to: settings.round_to, round_mode: settings.round_mode || 'up', spot: { ...settings.spot },
+    };
+    const next = { ...this.getPricing(itemId), confirmed };
+    writeJson(this.pricedPath(itemId), next);
+    return confirmed;
+  }
+
   /** Forget everything entered for a piece or set: its metal, weight, materials, method and any price set by hand. */
   clearPricing(itemId) {
     fs.rmSync(this.pricedPath(itemId), { force: true });
@@ -281,6 +309,12 @@ class PriceBook {
         pricing,
       };
       group.priced = price(group, pricing, settings, share);
+      // A confirmed price is the price; the live figure only says whether it has moved since.
+      const confirmed = pricing.confirmed || null;
+      group.priced.confirmed = confirmed;
+      group.priced.live_price = group.priced.price;
+      group.priced.moved = !!confirmed && confirmed.price !== group.priced.price;
+      if (confirmed) group.priced.price = confirmed.price;
       return group;
     })
       .filter((g) => includeBench || g.finished > 0)
@@ -307,7 +341,7 @@ class PriceBook {
   getPricing(itemId) {
     const file = this.pricedPath(itemId);
     const saved = fs.existsSync(file) ? readJson(file) : {};
-    return { item_id: itemId, metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '', ...saved };
+    return { item_id: itemId, metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '', confirmed: null, ...saved };
   }
 
   savePricing(itemId, { metal, weight_grams, components, method, manual_price, notes } = {}) {
@@ -344,7 +378,9 @@ class PriceBook {
     const rows = groups.map(({ priced: p, ...item }) => [
       item.id, item.label, item.type, item.sku, item.status, item.finished_at || '', item.quantity, item.pieces.map((i) => i.id).join('; '), p.hours,
       p.metal ? p.metal.name : '', p.weight_grams, p.metal_cost, p.components.map((c) => `${c.quantity} x ${c.name} @ ${c.unit_cost}`).join('; '),
-      p.components_cost, p.materials, p.labor, p.methods[1].price, p.methods[2].price, p.methods[3].price, p.by_hand ? 'by hand' : p.method, p.price, item.pricing.notes,
+      p.components_cost, p.materials, p.labor, p.methods[1].price, p.methods[2].price, p.methods[3].price,
+      p.confirmed ? p.confirmed.method : p.by_hand ? 'by hand' : p.method, p.price,
+      p.confirmed ? p.confirmed.at : '', p.confirmed ? p.live_price : '', item.pricing.notes,
     ]);
     const text = [CSV_FIELDS, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
     fs.writeFileSync(file, text, 'utf8');

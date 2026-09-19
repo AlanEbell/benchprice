@@ -75,15 +75,19 @@ function rowHtml(p) {
   ].filter(Boolean).join(' &middot; ');
   const qty = p.quantity > 1 ? `<span class="qty">&times;${p.quantity}</span>` : '';
   const hand = p.priced.by_hand;
+  const c = p.priced.confirmed;
+  // Three method figures, then the price that counts: confirmed (and whether it has moved since), or by hand, or the method's, unconfirmed.
+  const last = c ? `<span class="m chosen confirmed ${p.priced.moved ? 'moved' : ''}"><small>Confirmed${p.priced.moved ? `, now ${money0(p.priced.live_price)}` : ''}</small>${money0(c.price)}</span>` :
+    hand ? `<span class="m chosen hand"><small>Set by hand, unconfirmed</small>${money0(p.priced.price)}</span>` : '';
   const prices = p.priced.complete ?
-    [1, 2, 3].map((m) => `<span class="m ${!hand && p.priced.method === m ? 'chosen' : ''}"><small>${esc(state.methods[m].name)}</small>${money0(p.priced.methods[m].price)}</span>`).join('') +
-      (hand ? `<span class="m chosen hand"><small>Set by hand</small>${money0(p.priced.price)}</span>` : '') :
+    [1, 2, 3].map((m) => `<span class="m ${!c && !hand && p.priced.method === m ? 'chosen unconfirmed' : ''}"><small>${esc(state.methods[m].name)}${
+      !c && !hand && p.priced.method === m ? ', unconfirmed' : ''}</small>${money0(p.priced.methods[m].price)}</span>`).join('') + last :
     `<span class="m none" style="grid-column: span 3">no weight or materials yet</span>`;
   return `<div class="row ${selected.has(p.id) ? 'selected' : ''}" data-id="${esc(p.id)}">
     <input type="checkbox" data-act="select" aria-label="Select ${esc(p.label)}" ${selected.has(p.id) ? 'checked' : ''}>
     ${tile(p)}
     <div class="name"><b>${esc(p.label)}</b>${qty}<div class="meta">${fmtDur(p.seconds_per_piece)}${p.set ? ' each' : ''} &middot; ${meta}</div></div>
-    <div class="prices ${hand ? 'by-hand' : ''}">${prices}</div>
+    <div class="prices ${last ? 'by-hand' : ''}">${prices}</div>
     <div class="acts"><button class="quiet go" data-act="price">Price</button></div>
   </div>`;
 }
@@ -196,6 +200,18 @@ function updatePiece() {
   if (p.by_hand) {
     $('byHandNote').textContent = `Set by hand: ${money(p.price)} a piece. ${state.methods[chosen].name} would say ${money0(p.methods[chosen].price)}.`;
   }
+  const live = p.price;
+  $('pieceConfirm').textContent = p.complete ? `Confirm ${money0(live)}${editing.set ? ' each' : ''}` : 'Confirm price';
+  $('pieceConfirm').disabled = !p.complete;
+  const c = editing.pricing.confirmed;
+  $('confirmedNote').hidden = !c;
+  if (c) {
+    const when = new Date(c.at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    const same = c.price === live;
+    $('confirmedNote').classList.toggle('moved', !same);
+    $('confirmedNote').innerHTML = `<b>Confirmed at ${money(c.price)}</b>${editing.set ? ' a piece' : ''} on ${when}, ${esc(c.method_name.toLowerCase())}.` +
+      (same ? ' The figures below still come to the same.' : ` The figures below now come to <b>${money0(live)}</b>. Press Confirm to reprice, or Cancel to keep ${money0(c.price)}.`);
+  }
   $('methodCards').innerHTML = [1, 2, 3].map((id) => {
     const m = p.methods[id];
     return `<button type="button" class="card ${chosen === id ? 'chosen' : ''}" data-method="${id}" title="Price this piece by ${esc(m.name)}">
@@ -252,8 +268,13 @@ $('pieceForm').addEventListener('submit', async (ev) => {
   await api('savePricing', { id: editing.id, ...pieceDraft() });
   $('pieceDlg').close();
   const p = findPiece(editing.id);
-  toast(p && p.priced.complete ? `${p.label}${p.set ? ` (each of ${p.quantity})` : ''}: ${money0(p.priced.price)}${p.priced.by_hand ? ', set by hand' : ` by ${state.methods[p.priced.method].name}`}.` : `${editing.label} saved.`);
+  toast(p && p.priced.confirmed ? `${p.label} saved. Its confirmed price is still ${money0(p.priced.confirmed.price)}.` : `${editing.label} saved, not yet confirmed.`);
 });
+$('pieceConfirm').onclick = async () => {
+  const done = await api('confirmPrice', { id: editing.id, ...pieceDraft() });
+  $('pieceDlg').close();
+  toast(`${editing.label}${editing.set ? ` (each of ${editing.quantity})` : ''} confirmed at ${money0(done.price)}, ${done.method_name.toLowerCase()}. It is written in the piece's file.`);
+};
 
 // ---- settings ----------------------------------------------------------
 

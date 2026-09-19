@@ -28,7 +28,7 @@
     <label class="check"><input type="checkbox" id="showBench"> Show the bench too</label>
   </div>
   <div class="list" id="pieces"></div>
-  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. Ticks pick the lines for <b>Save price sheet</b>.
+  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. Ticks pick the lines for <b>Save price sheet</b>.
     The time on each piece comes from BenchClock; press <kbd>F5</kbd> after finishing something there.</p>
 
   <footer>Pricing is saved as plain files in <button class="link" id="dataDir"></button>, beside your BenchClock time card.</footer>
@@ -71,6 +71,7 @@
       </div>
     </div>
 
+    <p class="confirmed-note" id="confirmedNote" hidden></p>
     <div class="breakdown" id="breakdown"></div>
     <p class="by-hand-note" id="byHandNote" hidden></p>
     <div class="methods" id="methodCards"></div>
@@ -79,7 +80,8 @@
       <button type="button" class="danger quiet" id="pieceClear" title="Forget the metal, weight, materials and price for this line and start over">Clear pricing</button>
       <span class="spacer"></span>
       <button type="button" id="pieceCancel">Cancel</button>
-      <button type="submit" class="primary">Save</button>
+      <button type="submit" id="pieceSave" title="Keep what was entered without confirming a price">Save</button>
+      <button type="button" class="primary" id="pieceConfirm" title="Write this price into the piece's file. It stays until you confirm again or clear it.">Confirm price</button>
     </div>
   </form>
 </dialog>

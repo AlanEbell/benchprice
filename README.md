@@ -17,6 +17,10 @@ works out a price three ways. A desktop app for Linux, Windows and macOS.
   instead of the default. *Or set the price yourself* overrides every method with a price you
   choose; the methods are still shown beside it for comparison. *Clear pricing* forgets
   everything entered for the line so you can start over.
+- **Confirm price** writes the price itself into the piece's file, with the figures it was
+  reached from and the date. From then on that is the piece's price, whatever spot prices and
+  settings do; the list says "now $X" when the live figure has moved, and confirming again
+  reprices. *Save* keeps what was entered without confirming.
 - **Three methods**, side by side:
   1. **Cost-plus**: materials plus labor, times a factor (2 to start).
   2. **Loaded hourly** (the default): your hourly rate divided by the share of clocked time

@@ -25,6 +25,13 @@
 .methods.overridden .card.chosen { border-color: var(--line); background: var(--card); }
 .methods.overridden .card.chosen .price { color: var(--ink); }
 .by-hand-note { margin-top: 10px; font-size: 14px; color: var(--gold); font-weight: 600; }
+.confirmed-note { margin-top: 14px; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 14px; }
+.confirmed-note.moved { background: color-mix(in srgb, var(--gold) 14%, transparent); color: var(--gold); }
+.confirmed-note b { font-weight: 600; }
+.row .prices .m.confirmed small { color: var(--accent); }
+.row .prices .m.confirmed.moved small { color: var(--gold); }
+.row .prices .m.unconfirmed { font-weight: 600; }
+.row .prices .m.unconfirmed small { color: var(--muted); }
 
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 16px; }

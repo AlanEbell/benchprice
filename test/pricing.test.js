@@ -127,7 +127,7 @@ test('pricing a piece is saved beside BenchClock without touching its files', ()
   assert.equal(fs.existsSync(path.join(dir, 'pricing', 'items', 'moonstone-ring-1.json')), false);
   assert.equal(book.listGroups()[0].priced.complete, false, 'cleared: back to the start');
   book.clearPricing('moonstone-ring-1'); // clearing twice is fine
-  assert.deepEqual(book.getPricing('cuff-1'), { item_id: 'cuff-1', metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '' });
+  assert.deepEqual(book.getPricing('cuff-1'), { item_id: 'cuff-1', metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '', confirmed: null });
 });
 
 test('the list is finished pieces first with prices, and the bench on request', () => {
@@ -176,6 +176,38 @@ test('pieces added together are one set with one price; custom pieces stand alon
   const [header, row] = fs.readFileSync(out, 'utf8').trim().split('\r\n').map((line) => line.split(','));
   assert.equal(row[header.indexOf('quantity')], '3');
   assert.equal(row[header.indexOf('piece_ids')], 'band-a; band-b; band-c');
+});
+
+test('confirming writes the price into the file, and it holds until repriced', () => {
+  assert.throws(() => book.confirmPrice('moonstone-ring-1', {}), /before confirming/);
+  const done = book.confirmPrice('moonstone-ring-1', { metal: 'sterling', weight_grams: 4.2, components: [{ name: 'Moonstone', quantity: 1, unit_cost: 30 }] });
+  const file = JSON.parse(fs.readFileSync(path.join(dir, 'pricing', 'items', 'moonstone-ring-1.json'), 'utf8'));
+  assert.equal(file.confirmed.price, done.price);
+  assert.deepEqual([file.confirmed.method, file.confirmed.method_name, file.confirmed.hours, file.confirmed.materials, file.confirmed.metal.name, file.confirmed.spot.silver],
+    [2, 'Loaded hourly', 2.5, 34.6, 'Sterling silver', 32]);
+  assert.match(file.confirmed.at, /^\d{4}-\d\d-\d\dT/);
+  let [ring] = book.listGroups();
+  assert.deepEqual([ring.priced.price, ring.priced.moved, ring.priced.confirmed.price], [done.price, false, done.price]);
+  // the silver price doubles: the confirmed price stands, the live one moves
+  book.saveSettings({ spot: { silver: 64 } });
+  [ring] = book.listGroups();
+  assert.equal(ring.priced.price, done.price, 'confirmed price holds');
+  assert.ok(ring.priced.live_price > done.price);
+  assert.equal(ring.priced.moved, true);
+  const out = path.join(dir, 'confirmed.csv');
+  book.exportCsv(out);
+  const [header, row] = fs.readFileSync(out, 'utf8').trim().split('\r\n').map((line) => line.split(','));
+  assert.equal(row[header.indexOf('price')], String(done.price));
+  assert.equal(row[header.indexOf('price_now')], String(ring.priced.live_price));
+  assert.ok(row[header.indexOf('confirmed_at')].startsWith(file.confirmed.at.slice(0, 10)));
+  // repricing replaces it; a hand price can be confirmed too; clearing forgets it
+  const again = book.confirmPrice('moonstone-ring-1', {});
+  assert.equal(again.price, ring.priced.live_price);
+  assert.equal(book.listGroups()[0].priced.moved, false);
+  const hand = book.confirmPrice('moonstone-ring-1', { manual_price: 350 });
+  assert.deepEqual([hand.price, hand.method, hand.method_price > 0], [350, 'by hand', true]);
+  book.clearPricing('moonstone-ring-1');
+  assert.equal(book.listGroups()[0].priced.confirmed, null);
 });
 
 test('a folder without BenchClock in it is empty, not an error', () => {

@@ -56,12 +56,28 @@ app.on('browser-window-created', (event, win) => {
       await shot('2-piece');
       await run("document.querySelector('#methodCards [data-method=\"3\"]').click()");
       assert.equal(await run("return $('pMethod').value"), '3');
-      await run("document.querySelector('#pieceForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));");
+      assert.match(await run("return $('pieceConfirm').textContent"), /^Confirm \$\d+ each$/);
+      await run("$('pieceSave').click(); await new Promise((r) => setTimeout(r, 400));");
       const saved = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json'), 'utf8'));
-      assert.deepEqual([saved.metal, saved.weight_grams, saved.method, saved.notes, saved.components.length], ['sterling', 4.2, 3, 'Bezel set', 2]);
+      assert.deepEqual([saved.metal, saved.weight_grams, saved.method, saved.notes, saved.components.length, saved.confirmed], ['sterling', 4.2, 3, 'Bezel set', 2, null]);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen small').textContent"), /unconfirmed/);
+      // confirming writes the price into the file; a settings change then shows it has moved, until repriced
+      await run("document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click(); $('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400));");
+      const confirmed = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json'), 'utf8')).confirmed;
+      assert.deepEqual([confirmed.method, confirmed.method_name, confirmed.pieces, confirmed.metal.name], [3, 'Tiered materials', 2, 'Sterling silver']);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), new RegExp(`^Confirmed\\$${confirmed.price}$`));
+      await run("await api('saveSettings', { spot: { silver: 64 } });");
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen small').textContent"), /Confirmed, now \$\d+/);
+      await run("document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click();");
+      assert.match(await run("return $('confirmedNote').textContent"), /now come to \$\d+\. Press Confirm to reprice/);
+      await shot('3a-moved');
+      await run("$('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400)); await api('saveSettings', { spot: { silver: 32 } });");
+      const repriced = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json'), 'utf8')).confirmed;
+      assert.ok(repriced.price > confirmed.price, 'repriced at the dearer silver');
+      await run("document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click(); $('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400));");
       assert.deepEqual(saved.components[1], { name: 'Jump rings', quantity: 4, unit_cost: 0.25 });
       assert.equal(fs.readdirSync(path.join(dataDir, 'items')).length, 5, "BenchClock's folder is untouched");
-      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen small').textContent"), /Tiered/);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), /^Confirmed\$/);
       await shot('3-main-priced');
 
       // a price set by hand wins; clearing starts over
@@ -69,9 +85,10 @@ app.on('browser-window-created', (event, win) => {
       assert.equal(await run("return $('methodCards').classList.contains('overridden') && !$('byHandNote').hidden"), true);
       assert.match(await run("return $('byHandNote').textContent"), /Set by hand: \$299\.00 a piece\. Tiered materials would say/);
       await shot('3b-by-hand');
-      await run("document.querySelector('#pieceForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));");
-      assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json'), 'utf8')).manual_price, 299);
-      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), /Set by hand\$299/);
+      await run("$('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400));");
+      const byHand = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json'), 'utf8'));
+      assert.deepEqual([byHand.manual_price, byHand.confirmed.price, byHand.confirmed.method], [299, 299, 'by hand']);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), /Confirmed\$299/);
       await run("document.querySelector('#pieces .row[data-id=hoops] [data-act=price]').click();");
       assert.equal(await run("return $('pieceClear').hidden"), true, 'nothing to clear on an unpriced line');
       await run("$('pieceCancel').click(); document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click(); $('pieceClear').click(); await new Promise((r) => setTimeout(r, 200));");
@@ -83,10 +100,10 @@ app.on('browser-window-created', (event, win) => {
       await run(`document.querySelector('#pieces .row[data-id=batch-1] [data-act=price]').click();
                  $('pMetal').value = 'sterling'; $('pWeight').value = '4.2'; $('partAdd').click();
                  $('partRows').children[0].querySelector('[data-part=name]').value = 'Moonstone'; $('partRows').children[0].querySelector('[data-part=unit_cost]').value = '31';
-                 updatePiece(); document.querySelector('#pieceForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));`);
+                 updatePiece(); $('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400));`);
 
       // settings: a new rate and a silver price change every price
-      const before = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent");
+      const before = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .m:nth-child(3)').textContent");
       await run("$('settingsBtn').click(); await new Promise((r) => setTimeout(r, 200));");
       assert.equal(await run("return $('settingsDlg').open && $('sRate').value"), '50');
       assert.equal(await run("return $('metalRows').children.length"), 9);
@@ -97,8 +114,9 @@ app.on('browser-window-created', (event, win) => {
       assert.deepEqual([settings.labor_rate, settings.spot.silver, settings.overhead_share, settings.default_method, settings.metals.length, settings.round_to, settings.round_mode], [60, 40, 0.35, 1, 9, 5, 'nearest']);
       assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), /\$\d+[05]$/, 'a multiple of $5');
       assert.match(await run("return $('strip').textContent"), /35% TimeOverhead.*set by hand; BenchClock says 30\.1%/);
-      const after = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent");
-      assert.notEqual(before, after);
+      const after = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .m:nth-child(3)').textContent");
+      assert.notEqual(before, after, 'the method figures follow the settings');
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen small').textContent"), /Confirmed, now/, 'the confirmed price holds');
       assert.match(await run("return document.querySelector('#pieces .row[data-id=hoops] .prices').textContent"), /no weight or materials yet/);
 
       // the bench, ticks, and the price sheet
