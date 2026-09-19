@@ -1,7 +1,7 @@
 {
   "name": "benchprice",
   "productName": "BenchPrice",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "BenchPrice, a pricing sheet for BenchClock: weight, metal, stones and findings, and a price for each finished piece.",
   "author": "AlanEbell <13323211+AlanEbell@users.noreply.github.com>",
   "license": "MIT",
@@ -10,9 +10,50 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "smoke": "electron scripts/smoke.js"
+    "smoke": "electron scripts/smoke.js",
+    "icon": "electron scripts/make-icon.js",
+    "dist": "electron-builder"
   },
   "devDependencies": {
-    "electron": "^44.4.1"
-  }
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.alanebell.benchprice",
+    "files": [
+      "src/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "build/icons",
+      "synopsis": "Prices for the pieces on your BenchClock time card",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "benchprice"
+        }
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+  },
+  "homepage": "https://github.com/AlanEbell/benchprice",
+  "desktopName": "benchprice.desktop"
 }

@@ -1,0 +1,87 @@
+# Builds the installers for Linux, Windows and macOS on GitHub's own machines.
+#
+#   By hand:      Actions tab > Build installers > Run workflow. The installers are attached
+#                 to the finished run as downloads ("Artifacts"), kept for 90 days.
+#   For release:  push a tag like v0.2.0. The same build runs, then a GitHub Release is
+#                 made with every installer attached, introduced by .github/release-notes.md.
+name: Build installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false # one system failing shouldn't throw away the others
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux, args: '' }
+          - { os: windows-latest, name: windows, args: '' }
+          - { os: macos-latest, name: mac, args: '--universal' } # one .dmg for both Apple Silicon and Intel Macs
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      # "never": electron-builder would otherwise try to publish by itself when it sees a tag
+      - run: npx electron-builder ${{ matrix.args }} --publish never
+      # There is no Apple certificate, so the app is signed "ad-hoc" (package.json, mac.identity "-").
+      # Apple Silicon refuses to start an app with no valid signature at all, so make sure it has one.
+      - if: runner.os == 'macOS'
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/mac-universal/BenchPrice.app
+          codesign --display --verbose=2 dist/mac-universal/BenchPrice.app 2>&1 | grep -E "Signature|Format|flags"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BenchPrice-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4 # for .github/release-notes.md
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      # A draft first, published only once every installer is on it, so nobody finds a half-filled release.
+      - name: Start the release as a draft
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 ||
+            gh release create "$TAG" --draft --title "BenchPrice $TAG" --notes-file .github/release-notes.md --generate-notes
+      # GitHub's upload server sometimes answers 500 for minutes on end (it did for the v0.2.0 .dmg, and
+      # a single `gh release create` with the files just hung). So: one file at a time, each with a time
+      # limit, tried again after a pause.
+      - name: Attach the installers
+        run: |
+          for file in installers/*; do
+            for attempt in 1 2 3 4 5 6; do
+              if timeout 600 gh release upload "$TAG" "$file" --clobber; then continue 2; fi
+              echo "::warning::Uploading $file failed (attempt $attempt of 6); waiting a minute"
+              sleep 60
+            done
+            echo "::error::Gave up uploading $file"
+            exit 1
+          done
+      - name: Publish
+        run: gh release edit "$TAG" --draft=false --latest

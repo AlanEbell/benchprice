@@ -48,6 +48,7 @@ const api = {
 
   openDataFolder: () => { shell.openPath(book.pricingDir); },
   openHomepage: () => { if (homepage) shell.openExternal(homepage); },
+  openBenchClockPage: () => { shell.openExternal('https://github.com/AlanEbell/benchclock'); },
 };
 
 ipcMain.handle('api', async (event, method, payload) => {

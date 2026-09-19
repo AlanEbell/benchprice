@@ -4,6 +4,15 @@ A price for each finished piece on your [BenchClock](https://github.com/AlanEbel
 time card. BenchClock knows how long a piece took; BenchPrice adds what it is made of and
 works out a price three ways. A desktop app for Linux, Windows and macOS.
 
+## Installing it
+
+Install [BenchClock](https://github.com/AlanEbell/benchclock) first: BenchPrice reads its time
+card. Then download the installer for your computer from the
+[latest release](https://github.com/AlanEbell/benchprice/releases/latest): `win-x64.exe` for
+Windows, `mac-universal.dmg` for a Mac, `linux-amd64.deb` or the `.AppImage` for Linux. The
+installers are not signed with a paid certificate yet, so Windows and macOS show a warning the
+first time; the release notes say what to click.
+
 ## Using it
 
 - **Finished pieces** come straight from BenchClock, with their making time per piece. Tick
@@ -64,6 +73,12 @@ Needs [Node.js](https://nodejs.org) 22 or newer.
 - `src/core/pricing.js` - settings, per-piece files, reading BenchClock's pieces, the CSV.
 - `src/main/` - the Electron main process: window, menu bar, file dialogs.
 - `src/renderer/` - the window itself. `styles.css` and `icons.js` are shared with BenchClock.
+- `build/icon.svg` - the app icon; `npm run icon` renders it to PNG.
+- `scripts/smoke.js` - drives the real app end to end: `npm run smoke -- --data-dir=/tmp/benchprice-smoke`.
+
+Installers have to be built on the system they are for. GitHub does that for all three:
+`.github/workflows/build.yml` builds them when run from the Actions tab, and pushing a tag
+like `v1.0.0` also makes a Release with the installers attached.
 
 ## License
 

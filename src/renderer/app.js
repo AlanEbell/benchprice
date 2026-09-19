@@ -100,7 +100,9 @@ function render() {
   $('listTitle').firstChild.textContent = showBench ? 'All pieces ' : 'Finished pieces ';
   $('pieces').innerHTML = list.length ? list.map(rowHtml).join('') :
     `<div class="empty">${state.hasBenchClock ? 'Nothing finished in BenchClock yet. Tick "Show the bench too" to price pieces that are still being made.' :
-      'BenchPrice reads the pieces from BenchClock\'s data folder, and there isn\'t one here.'}</div>`;
+      `BenchPrice reads the pieces from BenchClock's time card, and there isn't one on this computer yet. Install BenchClock, clock some work on a piece and finish it, then come back.
+       <div class="actions" style="justify-content:center"><button type="button" id="getBenchClock">Get BenchClock</button></div>`}</div>`;
+  if ($('getBenchClock')) $('getBenchClock').onclick = () => api('openBenchClockPage');
   const count = list.reduce((n, g) => n + g.quantity, 0);
   $('pieceCount').textContent = list.length ? `${pieces(count)}${count !== list.length ? ` in ${list.length} set${list.length === 1 ? '' : 's'} or single${list.length === 1 ? '' : 's'}` : ''}` : '';
   $('selCount').textContent = selected.size ? `${selected.size} ticked` : '';

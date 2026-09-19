@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#a87a2a"/>
+  <!-- the same ring as BenchClock, with a price where the clock was -->
+  <path d="M206 96l50 52 50-52-24-40h-52z" fill="#f5d48a" stroke="#fffdf8" stroke-width="16" stroke-linejoin="round"/>
+  <circle cx="256" cy="296" r="148" fill="none" stroke="#fffdf8" stroke-width="30"/>
+  <text x="256" y="304" font-family="Georgia, 'Iowan Old Style', Palatino, serif" font-weight="bold" font-size="200" fill="#fffdf8"
+        text-anchor="middle" dominant-baseline="central">$</text>
+</svg>
