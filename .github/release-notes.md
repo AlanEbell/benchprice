@@ -1,5 +1,9 @@
 BenchPrice puts a price on each finished piece of your BenchClock time card: its making time, its metal by weight at today's spot price, its stones and findings, three ways. It reads BenchClock's data folder and keeps its own files beside it. Install BenchClock first.
 
+## New in 1.1.0
+
+- **Add the supplier's premium** is a tick box on each piece, under its metal and weight. It shows the metal's premium over spot and the price per gram with and without it. It is ticked to start, as prices have always included the premium; untick it to price that piece's metal at its bare value. The README shows how to work a premium out from your supplier's price per ounce.
+
 ## Which file do I need?
 
 | Your computer | Download |

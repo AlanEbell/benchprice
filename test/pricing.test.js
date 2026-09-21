@@ -37,6 +37,9 @@ test('metal price per gram comes from spot, purity and premium', () => {
   assert.equal(metalPerGram(sterling, { silver: 32 }), 1.0944);
   assert.equal(metalPerGram({ id: 'x', name: 'x', base: null, per_gram: 2.5 }, {}), 2.5);
   assert.equal(metalPerGram(null, {}), 0);
+  // without the premium it is the bare metal value; Rio Grande's $85 sterling at $64 spot is a 43.6% premium
+  assert.equal(metalPerGram(sterling, { silver: 32 }, false), 0.9517);
+  assert.equal(metalPerGram({ ...sterling, premium: 0.436 }, { silver: 64 }), 2.7332); // $85.01 an ounce
   assert.equal(roundTo(273.14, 1), 274);
   assert.equal(roundTo(273.14, 5), 275);
   assert.equal(roundTo(273.14, 0), 273.14);
@@ -127,7 +130,16 @@ test('pricing a piece is saved beside BenchClock without touching its files', ()
   assert.equal(fs.existsSync(path.join(dir, 'pricing', 'items', 'moonstone-ring-1.json')), false);
   assert.equal(book.listGroups()[0].priced.complete, false, 'cleared: back to the start');
   book.clearPricing('moonstone-ring-1'); // clearing twice is fine
-  assert.deepEqual(book.getPricing('cuff-1'), { item_id: 'cuff-1', metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '', confirmed: null });
+  assert.deepEqual(book.getPricing('cuff-1'), { item_id: 'cuff-1', metal: null, weight_grams: 0, add_premium: true, components: [], method: null, manual_price: null, notes: '', confirmed: null });
+});
+
+test('the supplier premium can be left off a piece', () => {
+  book.savePricing('hoops-1', { metal: 'sterling', weight_grams: 4.2 });
+  const hoops = () => book.listGroups({ includeBench: true }).find((g) => g.id === 'hoops-1').priced;
+  assert.deepEqual([hoops().metal_cost, hoops().metal.premium], [4.6, 0.15]);
+  book.savePricing('hoops-1', { add_premium: false });
+  assert.deepEqual([hoops().metal_cost, hoops().metal.premium, book.getPricing('hoops-1').add_premium], [4, 0, false]); // 4.2 g x 0.9517
+  book.clearPricing('hoops-1');
 });
 
 test('the list is finished pieces first with prices, and the bench on request', () => {

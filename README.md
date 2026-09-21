@@ -41,7 +41,10 @@ first time; the release notes say what to click.
   to all three, last.
 - **Metal prices** come from spot prices per troy ounce that you keep current in *Settings*,
   by purity and your supplier's premium over spot. Gold-filled, brass and anything else can be
-  given a price per gram instead.
+  given a price per gram instead. The premium is what the supplier charges over the metal's
+  value at spot: sterling wire at $85 an ounce when fine silver is $64 is 85 / (64 x 0.925) - 1,
+  or 43.6%. *Add the supplier's premium* on a piece is ticked to start; untick it to price that
+  piece's metal at its bare value, for metal you did not buy at the supplier's price.
 - **Save price sheet** writes a CSV of the ticked pieces (or every finished piece) with all
   three prices, the chosen one, and the cost breakdown.
 - **Settings** (Ctrl+,) holds the labor rate, default method, spot prices, metals, and the

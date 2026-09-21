@@ -14,12 +14,15 @@ const METHODS = {
   3: { id: 3, name: 'Tiered materials', short: 'Materials marked up by cost band, plus labor and studio overhead, then a margin' },
 };
 
-/** Dollars per gram of a metal, from spot and purity, or its own per-gram price. */
-function metalPerGram(metal, spot) {
+/**
+ * Dollars per gram of a metal, from spot and purity, or its own per-gram price. The supplier's
+ * premium over spot is added unless `addPremium` is false, which leaves the bare metal value.
+ */
+function metalPerGram(metal, spot, addPremium = true) {
   if (!metal) return 0;
   if (!metal.base) return round4(Number(metal.per_gram) || 0);
   const ounce = Number((spot || {})[metal.base]) || 0;
-  return round4(ounce / TROY_OUNCE_GRAMS * (Number(metal.purity) || 0) * (1 + (Number(metal.premium) || 0)));
+  return round4(ounce / TROY_OUNCE_GRAMS * (Number(metal.purity) || 0) * (1 + (addPremium ? Number(metal.premium) || 0 : 0)));
 }
 
 function tierFactor(tiers, cost) {
@@ -45,7 +48,8 @@ function price(item, pricing, settings, overheadShare) {
   const rate = Number(settings.labor_rate) || 0;
   const labor = round2(hours * rate);
   const metal = settings.metals.find((m) => m.id === (pricing && pricing.metal)) || null;
-  const perGram = metalPerGram(metal, settings.spot);
+  const addPremium = !(pricing && pricing.add_premium === false);
+  const perGram = metalPerGram(metal, settings.spot, addPremium);
   const weight = Number(pricing && pricing.weight_grams) || 0;
   const metalCost = round2(weight * perGram);
   const components = ((pricing && pricing.components) || []).map((c) => ({
@@ -87,7 +91,7 @@ function price(item, pricing, settings, overheadShare) {
   const byHand = pricing && pricing.manual_price !== null && pricing.manual_price !== undefined && pricing.manual_price !== '' &&
     Number.isFinite(Number(pricing.manual_price)) ? round2(Number(pricing.manual_price)) : null;
   return {
-    hours, rate, labor, metal: metal ? { id: metal.id, name: metal.name, per_gram: perGram } : null, weight_grams: weight,
+    hours, rate, labor, metal: metal ? { id: metal.id, name: metal.name, per_gram: perGram, premium: metal.base && addPremium ? Number(metal.premium) || 0 : 0 } : null, weight_grams: weight,
     metal_cost: metalCost, components, components_cost: componentsCost, materials, fees, methods, method: chosen,
     manual_price: byHand, by_hand: byHand !== null, price: byHand !== null ? byHand : methods[chosen].price,
     complete: byHand !== null || weight > 0 || componentsCost > 0,

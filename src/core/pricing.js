@@ -261,7 +261,7 @@ class PriceBook {
       price: p.live_price, method: p.by_hand ? 'by hand' : p.method, method_name: p.by_hand ? 'Set by hand' : METHODS[p.method].name,
       at: new Date().toISOString(), per_piece: true, pieces: group.quantity,
       hours: p.hours, rate: p.rate, labor: p.labor, overhead_share: chosen && chosen.overhead_share !== undefined ? chosen.overhead_share : null,
-      metal: p.metal ? { id: p.metal.id, name: p.metal.name, per_gram: p.metal.per_gram } : null, weight_grams: p.weight_grams, metal_cost: p.metal_cost,
+      metal: p.metal ? { id: p.metal.id, name: p.metal.name, per_gram: p.metal.per_gram, premium: p.metal.premium } : null, weight_grams: p.weight_grams, metal_cost: p.metal_cost,
       components: p.components.map((c) => ({ name: c.name, quantity: c.quantity, unit_cost: c.unit_cost, total: c.total })), components_cost: p.components_cost,
       materials: p.materials, method_price: p.by_hand ? p.methods[p.method].price : null,
       fees: p.fees, round_to: settings.round_to, round_mode: settings.round_mode || 'up', spot: { ...settings.spot },
@@ -341,10 +341,10 @@ class PriceBook {
   getPricing(itemId) {
     const file = this.pricedPath(itemId);
     const saved = fs.existsSync(file) ? readJson(file) : {};
-    return { item_id: itemId, metal: null, weight_grams: 0, components: [], method: null, manual_price: null, notes: '', confirmed: null, ...saved };
+    return { item_id: itemId, metal: null, weight_grams: 0, add_premium: true, components: [], method: null, manual_price: null, notes: '', confirmed: null, ...saved };
   }
 
-  savePricing(itemId, { metal, weight_grams, components, method, manual_price, notes } = {}) {
+  savePricing(itemId, { metal, weight_grams, add_premium, components, method, manual_price, notes } = {}) {
     const settings = this.settings();
     const current = this.getPricing(itemId);
     const next = { ...current, schema_version: SCHEMA_VERSION, item_id: itemId };
@@ -353,6 +353,7 @@ class PriceBook {
       next.metal = metal || null;
     }
     if (weight_grams !== undefined) next.weight_grams = weight_grams === '' || weight_grams === null ? 0 : num(weight_grams, 'Weight', { min: 0, max: 100000 });
+    if (add_premium !== undefined) next.add_premium = add_premium !== false;
     if (components !== undefined) {
       if (!Array.isArray(components)) throw new PricingError('Components need to be a list.');
       next.components = components

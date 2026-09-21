@@ -164,6 +164,7 @@ function pieceDraft() {
   return {
     metal: $('pMetal').value || null,
     weight_grams: $('pWeight').value === '' ? 0 : Number($('pWeight').value),
+    add_premium: $('pPremium').checked,
     components: [...$('partRows').children].map((tr) => ({
       name: tr.querySelector('[data-part=name]').value,
       quantity: Number(tr.querySelector('[data-part=quantity]').value) || 0,
@@ -177,6 +178,13 @@ function pieceDraft() {
 
 function updatePiece() {
   const draft = pieceDraft();
+  // the premium only means something for a metal priced from spot
+  const picked = state.settings.metals.find((m) => m.id === draft.metal);
+  $('pPremiumRow').hidden = !(picked && picked.base);
+  if (picked && picked.base) {
+    $('pPremiumText').textContent = `Add the supplier's premium over spot: ${pct(picked.premium || 0)}, ` +
+      `${money(metalPerGram(picked, state.settings.spot))}/g instead of ${money(metalPerGram(picked, state.settings.spot, false))}/g`;
+  }
   const p = price(editing, draft, state.settings, state.overheadShare);
   for (const tr of $('partRows').children) {
     const q = Number(tr.querySelector('[data-part=quantity]').value) || 0;
@@ -185,7 +193,7 @@ function updatePiece() {
   }
   const line = (label, value, extra = '') => `<div class="line ${extra}"><span>${label}</span><span>${value}</span></div>`;
   $('breakdown').innerHTML =
-    line(`Metal${p.metal ? `: ${p.weight_grams} g of ${esc(p.metal.name)} at ${money(p.metal.per_gram)}/g` : ''}`, money(p.metal_cost)) +
+    line(`Metal${p.metal ? `: ${p.weight_grams} g of ${esc(p.metal.name)} at ${money(p.metal.per_gram)}/g${p.metal.premium ? `, with the ${pct(p.metal.premium)} premium` : ''}` : ''}`, money(p.metal_cost)) +
     line(`Stones and findings`, money(p.components_cost)) +
     line(`Materials`, money(p.materials), 'sum') +
     line(`Labor: ${p.hours} h at ${money0(p.rate)}/h`, money(p.labor)) +
@@ -234,6 +242,7 @@ function openPiece(piece) {
     `<option value="${esc(m.id)}">${esc(m.name)} (${money(metalPerGram(m, s.spot))}/g)</option>`).join('');
   $('pMetal').value = piece.pricing.metal || '';
   $('pWeight').value = piece.pricing.weight_grams || '';
+  $('pPremium').checked = piece.pricing.add_premium !== false;
   $('partRows').replaceChildren(...piece.pricing.components.map(partRow));
   $('pMethod').innerHTML = `<option value="">Default: ${esc(state.methods[s.default_method].name)}</option>` +
     [1, 2, 3].map((id) => `<option value="${id}">${id}. ${esc(state.methods[id].name)}</option>`).join('');

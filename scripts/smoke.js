@@ -52,7 +52,15 @@ app.on('browser-window-created', (event, win) => {
       const cards = await run("return [...document.querySelectorAll('#methodCards .card .price')].map((e) => e.textContent)");
       assert.equal(cards.length, 3);
       assert.equal(await run("return document.querySelector('#methodCards .card.chosen').dataset.method"), '2', 'method 2 is the default');
-      assert.match(await run("return $('breakdown').textContent"), /4\.2 g of Sterling silver at \$1\.09\/g/);
+      assert.match(await run("return $('breakdown').textContent"), /4\.2 g of Sterling silver at \$1\.09\/g, with the 15% premium/);
+      // the supplier's premium is a tick box: on to start, and the metal drops to its bare value without it
+      assert.deepEqual(await run("return [$('pPremium').checked, $('pPremiumRow').hidden]"), [true, false]);
+      assert.match(await run("return $('pPremiumText').textContent"), /premium over spot: 15%, \$1\.09\/g instead of \$0\.95\/g/);
+      await run("$('pPremium').click()");
+      assert.match(await run("return $('breakdown').textContent"), /4\.2 g of Sterling silver at \$0\.95\/g\$4\.00/);
+      await run("$('pMetal').value = 'brass'; updatePiece();");
+      assert.equal(await run("return $('pPremiumRow').hidden"), true, 'no premium on a metal priced by the gram');
+      await run("$('pMetal').value = 'sterling'; $('pPremium').click(); updatePiece();");
       await shot('2-piece');
       await run("document.querySelector('#methodCards [data-method=\"3\"]').click()");
       assert.equal(await run("return $('pMethod').value"), '3');

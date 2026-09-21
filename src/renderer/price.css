@@ -12,6 +12,8 @@
 
 .check { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; color: var(--ink); cursor: pointer; }
 .check input { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+.check[hidden] { display: none; }
+.premium-check { margin: 10px 0 4px; }
 
 .row .prices { display: grid; grid-template-columns: repeat(3, auto); gap: 0 18px; text-align: right; font-variant-numeric: tabular-nums; }
 .row .prices .m { color: var(--muted); font-size: 13px; }
