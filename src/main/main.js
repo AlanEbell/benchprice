@@ -35,6 +35,7 @@ const api = {
   savePricing: ({ id, ...changes }) => book.savePricing(id, changes),
   confirmPrice: ({ id, ...changes }) => book.confirmPrice(id, changes),
   clearPricing: ({ id }) => book.clearPricing(id),
+  sendBack: ({ ids }) => book.sendBack(ids),
 
   async exportCsv({ ids = [] } = {}) {
     const picked = await dialog.showSaveDialog(mainWindow, {

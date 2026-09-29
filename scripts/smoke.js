@@ -138,6 +138,22 @@ app.on('browser-window-created', (event, win) => {
       const lines = fs.readFileSync(csv, 'utf8').trim().split('\r\n');
       assert.equal(lines.length, 3);
       assert.ok(lines.some((l) => l.startsWith('batch-1,Moonstone ring,ring,,finished,2026-09-12T15:00:00-04:00,2,moonstone-ring-a; moonstone-ring-b,')), lines.join('\n'));
+      // finished by mistake: one of a set is picked from a list, a single piece is just asked about
+      assert.equal(await run("return !!document.querySelector('#pieces .row[data-id=pendant] [data-act=back]')"), false, 'nothing to send back on the bench');
+      await run("document.querySelector('#pieces .row[data-id=batch-1] [data-act=back]').click();");
+      assert.deepEqual(await run("return [$('backDlg').open, $('backRows').children.length, $('backSave').disabled]"), [true, 2, true]);
+      await run("$('backRows').querySelectorAll('input')[1].click();");
+      await shot('5-send-back');
+      await run("$('backSave').click(); await new Promise((r) => setTimeout(r, 400));");
+      const ringB = JSON.parse(fs.readFileSync(path.join(dataDir, 'items', 'moonstone-ring-b.json'), 'utf8'));
+      assert.deepEqual([ringB.status, ringB.finished_at, ringB.total_seconds], ['not_started', null, 6300]);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .meta').textContent"), /a set: 1 of 2 finished, one price/);
+      assert.equal(fs.existsSync(path.join(dataDir, 'pricing', 'items', 'batch-1.json')), true, 'the pricing is kept');
+      await run("document.querySelector('#pieces .row[data-id=hoops] [data-act=back]').click(); await new Promise((r) => setTimeout(r, 200));");
+      assert.match(await run("return $('askDlg').open && $('askTitle').textContent"), /Send Hoop earrings back to the bench\?/);
+      await run("$('askYes').click(); await new Promise((r) => setTimeout(r, 400));");
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'items', 'hoops.json'), 'utf8')).status, 'not_started');
+      assert.equal(await run("return !!document.querySelector('#pieces .row[data-id=hoops] [data-act=back]')"), false);
       // the menu reaches the page, and is ignored while a box is open
       win.webContents.send('menu', 'about');
       await pause(300);

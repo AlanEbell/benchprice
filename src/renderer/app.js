@@ -88,7 +88,8 @@ function rowHtml(p) {
     ${tile(p)}
     <div class="name"><b>${esc(p.label)}</b>${qty}<div class="meta">${fmtDur(p.seconds_per_piece)}${p.set ? ' each' : ''} &middot; ${meta}</div></div>
     <div class="prices ${last ? 'by-hand' : ''}">${prices}</div>
-    <div class="acts"><button class="quiet go" data-act="price">Price</button></div>
+    <div class="acts"><button class="quiet go" data-act="price">Price</button>${
+      finished ? '<button class="quiet" data-act="back" title="Finished by mistake? Send it back to the bench in BenchClock">Not finished</button>' : ''}</div>
   </div>`;
 }
 
@@ -120,6 +121,7 @@ document.addEventListener('click', (ev) => {
     if (target.checked) selected.add(piece.id); else selected.delete(piece.id);
     render();
   } else if (target.dataset.act === 'price') openPiece(piece);
+  else if (target.dataset.act === 'back') sendBack(piece);
 });
 $('clearSel').onclick = () => { selected.clear(); render(); };
 $('showBench').onchange = () => api('state', { includeBench: $('showBench').checked });
@@ -139,6 +141,46 @@ function ask(title, text, yesLabel) {
     $('askDlg').oncancel = () => resolve(false);
   });
 }
+
+// ---- sending a piece back to the bench ---------------------------------
+
+let returning = null; // the set in the box
+
+async function sendBackIds(piece, ids) {
+  const back = await api('sendBack', { ids });
+  toast(back.length === 1 && !piece.set ? `${piece.label} is back on the bench in BenchClock.` :
+    `${pieces(back.length)} of ${piece.name} ${back.length === 1 ? 'is' : 'are'} back on the bench in BenchClock.`);
+}
+
+/** A piece finished by mistake: straight back if it stands alone, or a choice of which ones from a set. */
+async function sendBack(piece) {
+  const done = piece.pieces.filter((i) => i.status === 'finished');
+  if (done.length > 1) {
+    returning = piece;
+    $('backTitle').textContent = `${piece.name}: which ones are not finished?`;
+    $('backRows').innerHTML = done.map((i) => `<label class="choice"><input type="checkbox" data-id="${esc(i.id)}">
+      <span class="who">${esc(i.label)}</span><span class="have">${fmtDur(i.total_seconds)} &middot; finished ${fmtDay(i.finished_at)}</span></label>`).join('');
+    $('backSave').disabled = true;
+    $('backDlg').showModal();
+    return;
+  }
+  const kept = piece.pricing.updated_at ? ' What you entered for its price is kept.' : '';
+  if (await ask(`Send ${piece.label} back to the bench?`,
+    `It goes back on the bench in BenchClock with all its time, to be finished again when it is really done.${kept}`, 'Send back')) {
+    await sendBackIds(piece, done.map((i) => i.id));
+  }
+}
+
+const backTicked = () => [...document.querySelectorAll('#backRows input:checked')].map((box) => box.dataset.id);
+$('backRows').addEventListener('change', () => { $('backSave').disabled = !backTicked().length; });
+$('backCancel').onclick = () => $('backDlg').close();
+$('backForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const ids = backTicked();
+  if (!ids.length) return;
+  await sendBackIds(returning, ids);
+  $('backDlg').close();
+});
 
 // ---- pricing one piece -------------------------------------------------
 

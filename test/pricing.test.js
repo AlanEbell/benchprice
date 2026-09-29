@@ -242,3 +242,26 @@ test('CSV price sheet', () => {
   assert.ok(row.includes('"1 x Moonstone, ""AAA"" @ 30"'));
   assert.equal(book.exportCsv(out, ['hoops-1', 'moonstone-ring-1']), 2, 'chosen pieces can be on the bench');
 });
+
+test('a piece finished by mistake goes back to the bench, and keeps its pricing', () => {
+  book.confirmPrice('moonstone-ring-1', { metal: 'sterling', weight_grams: 4.2 });
+  const file = path.join(dir, 'items', 'moonstone-ring-1.json');
+  const before = JSON.parse(fs.readFileSync(file, 'utf8'));
+  fs.writeFileSync(file, JSON.stringify({ ...before, time_entries: [{ session_id: 'a', seconds: 9000 }], kept: 'as it was' }));
+  assert.deepEqual(book.sendBack(['moonstone-ring-1']), [{ id: 'moonstone-ring-1', name: 'Moonstone ring' }]);
+  const after = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual([after.status, after.finished_at, after.total_seconds, after.kept], ['in_progress', null, 9000, 'as it was']);
+  assert.deepEqual(book.listGroups().map((g) => g.id), []); // nothing finished any more
+  const [ring] = book.listGroups({ includeBench: true }).filter((g) => g.id === 'moonstone-ring-1');
+  assert.equal(ring.pricing.confirmed.price, ring.priced.price); // still priced
+
+  assert.deepEqual(book.sendBack(['hoops-1']), []); // wasn't finished: left alone
+  for (const bad of [[], ['time-overhead'], ['../settings'], ['nobody-1']]) assert.throws(() => book.sendBack(bad), PricingError);
+});
+
+test('a piece with no time on it goes back as not started', () => {
+  const file = path.join(dir, 'items', 'cuff-1.json');
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), status: 'finished', finished_at: '2026-09-11T10:00:00-04:00' }));
+  book.sendBack(['cuff-1']);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).status, 'not_started');
+});

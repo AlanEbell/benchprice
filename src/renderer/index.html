@@ -28,7 +28,7 @@
     <label class="check"><input type="checkbox" id="showBench"> Show the bench too</label>
   </div>
   <div class="list" id="pieces"></div>
-  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. Ticks pick the lines for <b>Save price sheet</b>.
+  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. Ticks pick the lines for <b>Save price sheet</b>. Finished something by mistake? <b>Not finished</b> on its line sends it back to the bench in BenchClock.
     The time on each piece comes from BenchClock; press <kbd>F5</kbd> after finishing something there.</p>
 
   <footer>Pricing is saved as plain files in <button class="link" id="dataDir"></button>, beside your BenchClock time card.</footer>
@@ -83,6 +83,19 @@
       <button type="button" id="pieceCancel">Cancel</button>
       <button type="submit" id="pieceSave" title="Keep what was entered without confirming a price">Save</button>
       <button type="button" class="primary" id="pieceConfirm" title="Write this price into the piece's file. It stays until you confirm again or clear it.">Confirm price</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="backDlg">
+  <form method="dialog" id="backForm">
+    <h2 id="backTitle"></h2>
+    <p class="hint">Tick the ones that are not finished after all. They go back to the bench in BenchClock with all their time, and the set's price is kept.</p>
+    <div class="choose" id="backRows"></div>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button type="button" id="backCancel">Cancel</button>
+      <button type="submit" class="primary" id="backSave">Send back</button>
     </div>
   </form>
 </dialog>

@@ -34,6 +34,9 @@
 .row .prices .m.confirmed.moved small { color: var(--gold); }
 .row .prices .m.unconfirmed { font-weight: 600; }
 .row .prices .m.unconfirmed small { color: var(--muted); }
+/* two buttons to a line: one above the other, so the prices keep their room */
+.row .acts { flex-direction: column; align-items: stretch; }
+.row .acts button { padding-top: 4px; padding-bottom: 4px; white-space: nowrap; }
 
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 16px; }

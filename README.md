@@ -30,6 +30,9 @@ first time; the release notes say what to click.
   reached from and the date. From then on that is the piece's price, whatever spot prices and
   settings do; the list says "now $X" when the live figure has moved, and confirming again
   reprices. *Save* keeps what was entered without confirming.
+- **Not finished** on a line is for a piece that was marked finished by mistake. It goes back
+  on the bench in BenchClock with all its time, the same as *Reopen* there, and what you
+  entered for its price is kept for when it is really done. For a set it asks which ones.
 - **Three methods**, side by side:
   1. **Cost-plus**: materials plus labor, times a factor (2 to start).
   2. **Loaded hourly** (the default): your hourly rate divided by the share of clocked time
@@ -52,8 +55,9 @@ first time; the release notes say what to click.
 
 ## Where it keeps things
 
-BenchPrice reads BenchClock's data folder and never writes to BenchClock's own files. Its own
-files live in a `pricing` folder inside it:
+BenchPrice reads BenchClock's data folder. The one change it ever makes to BenchClock's own
+files is *Not finished*, which sets a piece's `status` back and empties its `finished_at`,
+exactly as BenchClock's *Reopen* does. Its own files live in a `pricing` folder inside it:
 
 ```
 <BenchClock data folder>/pricing/settings.json    labor rate, spot prices, metals, the three methods

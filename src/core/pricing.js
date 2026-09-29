@@ -2,8 +2,10 @@
 /*
  * BenchPrice: the pricing arithmetic and the files behind it. No interface here.
  *
- * BenchClock's data folder is read, never written: pieces and their time come from
- * items/<id>.json. Everything BenchPrice adds lives in its own folder inside it:
+ * BenchClock's data folder is read: pieces and their time come from items/<id>.json.
+ * The one thing written there is a piece sent back to the bench (see sendBack), which
+ * does what BenchClock's own Reopen does. Everything BenchPrice adds lives in its own
+ * folder inside it:
  *
  *   <data dir>/pricing/settings.json     labor rate, spot prices, metals, the three methods
  *   <data dir>/pricing/items/<id>.json   weight, metal, stones and findings for one piece
@@ -220,6 +222,29 @@ class PriceBook {
       (b.finished_at || '').localeCompare(a.finished_at || '') ||
       a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'en', { numeric: true }) || (a.sequence || 0) - (b.sequence || 0));
     return items;
+  }
+
+  /**
+   * Send finished pieces back to BenchClock's bench: they were marked finished by mistake.
+   * The same change BenchClock's Reopen makes to the piece's file, and the only one BenchPrice
+   * ever makes there. The time on the piece and whatever was entered for its price stay.
+   * Returns the pieces sent back.
+   */
+  sendBack(itemIds) {
+    if (!Array.isArray(itemIds) || !itemIds.length) throw new PricingError('Choose at least one piece to send back.');
+    const files = [...new Set(itemIds.map(String))].map((id) => {
+      if (!/^[\w-]+$/.test(id) || id === OVERHEAD_ID) throw new PricingError(`No piece with id ${id}`);
+      const file = path.join(this.itemsDir, `${id}.json`);
+      if (!fs.existsSync(file)) throw new PricingError(`No piece with id ${id} in BenchClock.`);
+      return [file, readJson(file)];
+    }); // every one found before anything is saved
+    const back = files.filter(([, item]) => item.status === 'finished');
+    for (const [file, item] of back) {
+      item.status = (item.time_entries || []).length ? 'in_progress' : 'not_started';
+      item.finished_at = null;
+      writeJson(file, item);
+    }
+    return back.map(([, item]) => ({ id: item.id, name: item.name }));
   }
 
   /** The share of all clocked time that went to TimeOverhead, from BenchClock's files. */
