@@ -20,6 +20,12 @@ first time; the release notes say what to click.
 - **Sets carry one price.** Pieces added together in BenchClock (*Moonstone ring x3*) are one
   line here, priced once on the average making time of the finished ones, so every piece in
   the set sells for the same. A custom piece is always priced on its own.
+- **Groups** on a set's line is for a set whose pieces are not all alike: earrings made
+  together but set with different stones, say. Give each piece a letter; the pieces sharing a
+  letter become a line of their own (*Spiral earrings (group A)*), with its own metal, stones
+  and price, on the making time of its own pieces. A new group starts with a copy of what was
+  entered for the set, unconfirmed. Put every piece back on one letter and the set is one line
+  with one price again. A group left with no pieces is forgotten, and it asks first.
 - **Price** on a line opens the piece: its metal and weight in grams, and a list of stones,
   findings and anything else bought in, at what you paid. The prices update as you type, and
   the box shows how each was arrived at. Press a method's card to price this piece that way
@@ -62,6 +68,7 @@ exactly as BenchClock's *Reopen* does. Its own files live in a `pricing` folder 
 ```
 <BenchClock data folder>/pricing/settings.json    labor rate, spot prices, metals, the three methods
 <BenchClock data folder>/pricing/items/<id>.json  metal, weight, stones and findings for one piece
+<BenchClock data folder>/pricing/splits.json      the sets divided into groups, and each piece's letter
 ```
 
 The data folder is the one BenchClock uses (`~/.local/share/BenchClock`, `%APPDATA%\BenchClock`,

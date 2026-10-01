@@ -63,10 +63,17 @@ function stripHtml() {
 
 const STATUS = { finished: 'finished', part_finished: 'finished', in_progress: 'on the bench', not_started: 'not started' };
 
+/** "pieces 1 and 3 of the set": a group's pieces, by the numbers on their labels. */
+function whichOf(p) {
+  const nos = p.pieces.map((i) => p.of_set.pieces.find((w) => w.id === i.id).number);
+  return `piece${nos.length === 1 ? '' : 's'} ${nos.length > 1 ? `${nos.slice(0, -1).join(', ')} and ${nos.at(-1)}` : nos[0]} of the set`;
+}
+
 function rowHtml(p) {
   const finished = p.finished > 0;
   const meta = [
-    p.set && (p.status === 'part_finished' ? `a set: ${p.finished} of ${p.quantity} finished, one price` : 'a set, one price'),
+    p.group ? `${whichOf(p)}, ${!p.set ? 'priced apart' : p.status === 'part_finished' ? `${p.finished} of ${p.quantity} finished, one price` : 'one price'}` :
+      p.set && (p.status === 'part_finished' ? `a set: ${p.finished} of ${p.quantity} finished, one price` : 'a set, one price'),
     finished ? `finished ${fmtDay(p.finished_at)}` : STATUS[p.status],
     p.sku && `SKU ${esc(p.sku)}`,
     p.priced.metal ? `${p.priced.weight_grams} g ${esc(p.priced.metal.name)}` : (p.priced.weight_grams ? `${p.priced.weight_grams} g` : ''),
@@ -89,6 +96,7 @@ function rowHtml(p) {
     <div class="name"><b>${esc(p.label)}</b>${qty}<div class="meta">${fmtDur(p.seconds_per_piece)}${p.set ? ' each' : ''} &middot; ${meta}</div></div>
     <div class="prices ${last ? 'by-hand' : ''}">${prices}</div>
     <div class="acts"><button class="quiet go" data-act="price">Price</button>${
+      p.of_set ? '<button class="quiet" data-act="groups" title="Different stones in one set? Divide it into groups priced apart">Groups</button>' : ''}${
       finished ? '<button class="quiet" data-act="back" title="Finished by mistake? Send it back to the bench in BenchClock">Not finished</button>' : ''}</div>
   </div>`;
 }
@@ -121,6 +129,7 @@ document.addEventListener('click', (ev) => {
     if (target.checked) selected.add(piece.id); else selected.delete(piece.id);
     render();
   } else if (target.dataset.act === 'price') openPiece(piece);
+  else if (target.dataset.act === 'groups') openGroups(piece);
   else if (target.dataset.act === 'back') sendBack(piece);
 });
 $('clearSel').onclick = () => { selected.clear(); render(); };
@@ -180,6 +189,59 @@ $('backForm').addEventListener('submit', async (ev) => {
   if (!ids.length) return;
   await sendBackIds(returning, ids);
   $('backDlg').close();
+});
+
+// ---- dividing a set into groups ----------------------------------------
+
+let grouping = null; // the set in the box: its id, name, pieces and the lines it is in now
+
+const groupPicks = () => Object.fromEntries([...document.querySelectorAll('#groupRows input:checked')].map((radio) => [radio.dataset.id, radio.value]));
+
+function updateGroups() {
+  const counts = {};
+  for (const letter of Object.values(groupPicks())) counts[letter] = (counts[letter] || 0) + 1;
+  const used = Object.keys(counts).sort();
+  $('groupsNote').textContent = used.length > 1 ?
+    `${used.length} groups, each priced on its own: ${used.map((letter) => `${letter} with ${pieces(counts[letter])}`).join(', ')}.` :
+    `All on one letter: ${grouping.name} is one set with one price.`;
+}
+
+function openGroups(piece) {
+  const set = piece.of_set;
+  grouping = { id: set.id, name: piece.name, pieces: set.pieces, lines: set.lines };
+  // as many letters as there are pieces, so each can stand alone
+  const letters = [...new Set([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, set.pieces.length), ...set.pieces.map((i) => i.group).filter(Boolean)])].sort();
+  $('groupsTitle').textContent = `${piece.name}: groups priced apart`;
+  $('groupRows').innerHTML = set.pieces.map((i) => `<div class="choice"><span class="who">${esc(i.label)}</span>
+    <span class="have">${fmtDur(i.total_seconds)} &middot; ${STATUS[i.status]}</span>
+    <span class="segmented" role="radiogroup" aria-label="Group of ${esc(i.label)}">${letters.map((letter) =>
+      `<label><input type="radio" name="group-${esc(i.id)}" data-id="${esc(i.id)}" value="${letter}" ${(i.group || 'A') === letter ? 'checked' : ''}><span>${letter}</span></label>`).join('')}</span></div>`).join('');
+  updateGroups();
+  $('groupsDlg').showModal();
+}
+
+$('groupRows').addEventListener('change', updateGroups);
+$('groupsCancel').onclick = () => $('groupsDlg').close();
+$('groupsForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const letters = groupPicks();
+  const split = new Set(Object.values(letters)).size > 1;
+  const next = Object.fromEntries(grouping.pieces.map((i) => [i.id, split ? `${grouping.id}-${letters[i.id]}` : grouping.id])); // the line each piece lands on
+  if (grouping.pieces.every((i) => next[i.id] === i.line)) { $('groupsDlg').close(); return; } // nothing moved
+  // A new group starts with a copy of what was entered where its first piece was; a line left with no pieces is forgotten.
+  const started = new Set(grouping.lines.map((line) => line.id));
+  const carried = new Set();
+  for (const i of grouping.pieces) if (!started.has(next[i.id])) { started.add(next[i.id]); carried.add(i.line); }
+  const gone = grouping.lines.filter((line) => !Object.values(next).includes(line.id));
+  const called = (line) => (line.group ? `group ${line.group}` : 'the set');
+  const warnings = [
+    ...gone.filter((line) => line.entered && !carried.has(line.id)).map((line) => `What was entered for ${called(line)} is forgotten.`),
+    ...gone.filter((line) => line.confirmed !== null).map((line) => `The confirmed price of ${money0(line.confirmed)} for ${called(line)} is dropped, to be confirmed again.`),
+  ];
+  if (warnings.length && !(await ask(`Change the groups of ${grouping.name}?`, warnings.join(' '), 'Change groups'))) return;
+  const done = await api('setGroups', { id: grouping.id, letters });
+  $('groupsDlg').close();
+  toast(done.split ? `${grouping.name} is in ${done.groups.length} groups, ${done.groups.join(', ')}, each with a line of its own.` : `${grouping.name} is one set with one price again.`);
 });
 
 // ---- pricing one piece -------------------------------------------------
@@ -277,9 +339,10 @@ function openPiece(piece) {
   const s = state.settings;
   $('pieceTitle').textContent = piece.set ? `${piece.label} \u00d7${piece.quantity}` : piece.label;
   $('pieceHint').textContent = piece.set ?
-    `A set of ${piece.quantity}: every piece carries the same price. ${fmtDur(piece.seconds_per_piece)} of making time each, the average from BenchClock over ` +
+    `${piece.group ? `Group ${piece.group}, ${whichOf(piece)}: these carry one price.` : `A set of ${piece.quantity}: every piece carries the same price.`} ` +
+      `${fmtDur(piece.seconds_per_piece)} of making time each, the average from BenchClock over ` +
       `${piece.finished ? `the ${piece.finished} finished` : 'all of them, none finished yet'}. Everything below is per piece.` :
-    `${fmtDur(piece.seconds_per_piece)} of making time from BenchClock${piece.finished ? `, finished ${fmtDay(piece.finished_at)}` : ', still on the bench'}. Everything below is per piece.`;
+    `${piece.group ? `Group ${piece.group}, ${whichOf(piece)}, priced apart from the others. ` : ''}${fmtDur(piece.seconds_per_piece)} of making time from BenchClock${piece.finished ? `, finished ${fmtDay(piece.finished_at)}` : ', still on the bench'}. Everything below is per piece.`;
   $('pMetal').innerHTML = '<option value="">No metal</option>' + s.metals.map((m) =>
     `<option value="${esc(m.id)}">${esc(m.name)} (${money(metalPerGram(m, s.spot))}/g)</option>`).join('');
   $('pMetal').value = piece.pricing.metal || '';
@@ -309,7 +372,7 @@ $('methodCards').addEventListener('click', (ev) => {
 });
 $('pieceCancel').onclick = () => $('pieceDlg').close();
 $('pieceClear').onclick = async () => {
-  const what = editing.set ? `the set of ${editing.quantity} \u00d7 ${editing.name}` : editing.label;
+  const what = editing.set && !editing.group ? `the set of ${editing.quantity} \u00d7 ${editing.name}` : editing.label;
   if (await ask(`Clear the pricing of ${what}?`, 'Its metal, weight, materials, method and any price set by hand are forgotten. The time from BenchClock stays.', 'Clear')) {
     await api('clearPricing', { id: editing.id });
     $('pieceDlg').close();

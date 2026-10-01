@@ -9,6 +9,7 @@
  *
  *   <data dir>/pricing/settings.json     labor rate, spot prices, metals, the three methods
  *   <data dir>/pricing/items/<id>.json   weight, metal, stones and findings for one piece
+ *   <data dir>/pricing/splits.json       the sets divided into groups priced apart
  *
  * So BenchClock never sees a file it doesn't expect, and one backup of the folder keeps both.
  */
@@ -96,6 +97,7 @@ function labelItems(items) {
     group.sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
     group.forEach((item, index) => {
       item.label = group.length === 1 ? item.name : `${item.name} (${index + 1} of ${group.length})`;
+      item.number = index + 1;
     });
   }
   return items;
@@ -120,6 +122,7 @@ class PriceBook {
     this.pricingDir = path.join(this.dataDir, 'pricing');
     this.pricedDir = path.join(this.pricingDir, 'items');
     this.settingsFile = path.join(this.pricingDir, 'settings.json');
+    this.splitsFile = path.join(this.pricingDir, 'splits.json');
     fs.mkdirSync(this.pricedDir, { recursive: true });
   }
 
@@ -265,9 +268,63 @@ class PriceBook {
 
   /**
    * Pieces BenchClock added together are one set and carry one price; a piece added on its
-   * own, or a custom piece, is priced alone. The key is what the pricing file is named after.
+   * own, or a custom piece, is priced alone. A set divided into groups (see setGroups) is one
+   * line for each group, `<set>-<letter>`. The key is what the pricing file is named after.
    */
-  static groupKey(item) { return item.batch_id && item.type !== 'custom' ? item.batch_id : item.id; }
+  static groupKey(item, splits = {}) {
+    if (!item.batch_id || item.type === 'custom') return item.id;
+    const letter = PriceBook.groupLetter(item, splits);
+    return letter ? `${item.batch_id}-${letter}` : item.batch_id;
+  }
+
+  /** The group a piece is in, when its set is divided; a piece added to the set since goes in the first group. */
+  static groupLetter(item, splits = {}) {
+    const letters = item.batch_id && item.type !== 'custom' ? splits[item.batch_id] : null;
+    return letters ? letters[item.id] || Object.values(letters).sort()[0] || null : null;
+  }
+
+  /** The sets divided into groups, and each piece's letter: { <set>: { <piece id>: 'A', ... } }. */
+  splits() {
+    return fs.existsSync(this.splitsFile) ? readJson(this.splitsFile).sets || {} : {};
+  }
+
+  /**
+   * Divide a set into groups priced apart, for pieces that differ (other stones, say). `letters`
+   * gives every piece of the set a letter, and the pieces sharing one become a line of their own.
+   * All on one letter and the set is whole again. A new group starts with a copy of what was
+   * entered where its first piece was, unconfirmed; a group left with no pieces is forgotten.
+   */
+  setGroups(setId, letters = {}) {
+    const lines = this.listGroups({ includeBench: true }).filter((g) => g.of_set && g.of_set.id === setId);
+    if (!lines.length) throw new PricingError('Only a set of two or more pieces can be divided into groups.');
+    const members = lines[0].of_set.pieces;
+    for (const id of Object.keys(letters || {})) {
+      if (!members.some((i) => i.id === id)) throw new PricingError(`No piece with id ${id} in this set.`);
+    }
+    const chosen = {};
+    for (const piece of members) {
+      const letter = String((letters || {})[piece.id] ?? '').trim().toUpperCase();
+      if (!/^[A-Z]$/.test(letter)) throw new PricingError(`${piece.label} needs a group: a letter from A to Z.`);
+      chosen[piece.id] = letter;
+    } // every one checked before anything is saved
+    const groups = [...new Set(Object.values(chosen))].sort();
+    const splits = this.splits();
+    if (groups.length > 1) splits[setId] = chosen; else delete splits[setId];
+    const keyOf = (piece) => PriceBook.groupKey({ id: piece.id, batch_id: setId }, splits);
+    const started = new Set(lines.map((line) => line.id));
+    for (const piece of members) { // in the set's order, so a new group's first piece decides
+      const key = keyOf(piece);
+      if (started.has(key)) continue;
+      started.add(key);
+      const from = lines.find((line) => line.id === piece.line).pricing;
+      if (from.updated_at) writeJson(this.pricedPath(key), { ...from, item_id: key, confirmed: null, updated_at: new Date().toISOString() });
+      else this.clearPricing(key);
+    }
+    const kept = new Set(members.map(keyOf));
+    for (const line of lines) if (!kept.has(line.id)) this.clearPricing(line.id);
+    writeJson(this.splitsFile, { schema_version: SCHEMA_VERSION, sets: splits });
+    return { split: groups.length > 1, groups };
+  }
 
   /**
    * Save what was entered, then write the price itself into the file: the figure, how it was
@@ -306,26 +363,39 @@ class PriceBook {
    * over the finished ones (over all of them while none is finished), so the whole set prices
    * the same. Finished sets only, unless `includeBench`; a set counts as finished once any
    * piece in it is, and then the ones still on the bench are listed but don't change the price.
+   * A group of a divided set is a line like any other, timed and priced on its own pieces;
+   * `of_set` on a line says which set it belongs to and how that set is divided.
    */
   listGroups({ includeBench = false } = {}) {
+    const splits = this.splits();
     const groups = new Map();
+    const sets = new Map(); // every piece of a set, however it is divided
+    const bySequence = (a, b) => (a.sequence || 0) - (b.sequence || 0);
     for (const item of this.listItems()) {
-      const key = PriceBook.groupKey(item);
+      const key = PriceBook.groupKey(item, splits);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(item);
+      if (key !== item.id) sets.set(item.batch_id, [...(sets.get(item.batch_id) || []), item].sort(bySequence));
     }
     const settings = this.settings();
     const share = this.overheadShare(settings);
-    return [...groups].map(([key, members]) => {
-      members.sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+    const all = [...groups].map(([key, members]) => {
+      members.sort(bySequence);
       const finished = members.filter((i) => i.status === 'finished');
       const timed = finished.length ? finished : members;
       const quantity = (list) => list.reduce((n, i) => n + (i.quantity || 1), 0);
       const perPiece = quantity(timed) ? timed.reduce((n, i) => n + (i.total_seconds || 0), 0) / quantity(timed) : 0;
       const first = members[0];
       const pricing = this.pricingFor(key, members);
+      const letter = PriceBook.groupLetter(first, splits);
+      const whole = (key !== first.id && sets.get(first.batch_id)) || [];
       const group = {
-        id: key, set: members.length > 1 || first.quantity > 1, name: first.name, label: first.name, type: first.type, photo: first.photo,
+        id: key, set: members.length > 1 || first.quantity > 1, name: first.name, label: letter ? `${first.name} (group ${letter})` : first.name,
+        group: letter, of_set: whole.length > 1 ? {
+          id: first.batch_id,
+          pieces: whole.map((i) => ({ id: i.id, label: i.label, number: i.number, status: i.status, total_seconds: i.total_seconds, group: PriceBook.groupLetter(i, splits), line: PriceBook.groupKey(i, splits) })),
+        } : null,
+        type: first.type, photo: first.photo,
         sku: first.sku, notes: first.notes, status: finished.length === members.length ? 'finished' : finished.length ? 'part_finished' :
           members.some((i) => i.status === 'in_progress') ? 'in_progress' : 'not_started',
         finished_at: finished.map((i) => i.finished_at).sort().at(-1) || null,
@@ -341,10 +411,17 @@ class PriceBook {
       group.priced.moved = !!confirmed && confirmed.price !== group.priced.price;
       if (confirmed) group.priced.price = confirmed.price;
       return group;
-    })
+    });
+    // Every line of a set knows the set's other lines, on the bench or not: the groups box asks before one is forgotten.
+    for (const g of all.filter((line) => line.of_set)) {
+      g.of_set.lines = all.filter((line) => line.of_set && line.of_set.id === g.of_set.id).map((line) => ({
+        id: line.id, label: line.label, group: line.group, entered: !!line.pricing.updated_at, confirmed: line.pricing.confirmed ? line.pricing.confirmed.price : null,
+      }));
+    }
+    return all
       .filter((g) => includeBench || g.finished > 0)
       .sort((a, b) => (b.finished > 0) - (a.finished > 0) || (b.finished_at || '').localeCompare(a.finished_at || '') ||
-        a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'en', { numeric: true }));
+        a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'en', { numeric: true }) || a.label.localeCompare(b.label));
   }
 
   /** A set's pricing is filed under its key; a set that was priced piece by piece before sets existed keeps its first piece's. */

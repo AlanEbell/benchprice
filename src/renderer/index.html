@@ -28,7 +28,7 @@
     <label class="check"><input type="checkbox" id="showBench"> Show the bench too</label>
   </div>
   <div class="list" id="pieces"></div>
-  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. Ticks pick the lines for <b>Save price sheet</b>. Finished something by mistake? <b>Not finished</b> on its line sends it back to the bench in BenchClock.
+  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. <b>Groups</b> on a set's line divides it into groups priced apart, for pieces with different stones. Ticks pick the lines for <b>Save price sheet</b>. Finished something by mistake? <b>Not finished</b> on its line sends it back to the bench in BenchClock.
     The time on each piece comes from BenchClock; press <kbd>F5</kbd> after finishing something there.</p>
 
   <footer>Pricing is saved as plain files in <button class="link" id="dataDir"></button>, beside your BenchClock time card.</footer>
@@ -96,6 +96,20 @@
       <span class="spacer"></span>
       <button type="button" id="backCancel">Cancel</button>
       <button type="submit" class="primary" id="backSave">Send back</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="groupsDlg">
+  <form method="dialog" id="groupsForm">
+    <h2 id="groupsTitle"></h2>
+    <p class="hint">Give the same letter to the pieces that sell for the same price. Each letter becomes a line of its own, with its own metal, stones and price, on the making time of its own pieces. Put them all on one letter and the set is one line again.</p>
+    <div class="choose" id="groupRows"></div>
+    <p class="hint" id="groupsNote"></p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button type="button" id="groupsCancel">Cancel</button>
+      <button type="submit" class="primary" id="groupsSave">Save groups</button>
     </div>
   </form>
 </dialog>

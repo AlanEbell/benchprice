@@ -154,6 +154,41 @@ app.on('browser-window-created', (event, win) => {
       await run("$('askYes').click(); await new Promise((r) => setTimeout(r, 400));");
       assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'items', 'hoops.json'), 'utf8')).status, 'not_started');
       assert.equal(await run("return !!document.querySelector('#pieces .row[data-id=hoops] [data-act=back]')"), false);
+      // a set divided into groups priced apart: each ring a line of its own, starting from what the set had
+      const pricedFile = (id) => path.join(dataDir, 'pricing', 'items', `${id}.json`);
+      const splitSets = () => JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'splits.json'), 'utf8')).sets;
+      assert.equal(await run("return !!document.querySelector('#pieces .row[data-id=hoops] [data-act=groups]')"), false, 'one piece file: nothing to divide');
+      await run("document.querySelector('#pieces .row[data-id=batch-1] [data-act=groups]').click();");
+      assert.deepEqual(await run("return [$('groupsDlg').open, $('groupRows').children.length, $('groupRows').querySelectorAll('input:checked').length, $('groupsNote').textContent]"),
+        [true, 2, 2, 'All on one letter: Moonstone ring is one set with one price.']);
+      await run("$('groupRows').children[1].querySelector('input[value=B]').click();");
+      assert.equal(await run("return $('groupsNote').textContent"), '2 groups, each priced on its own: A with 1 piece, B with 1 piece.');
+      await shot('6-groups');
+      await run("$('groupsSave').click(); await new Promise((r) => setTimeout(r, 200));");
+      assert.match(await run("return $('askDlg').open && $('askText').textContent"), /^The confirmed price of \$\d+ for the set is dropped, to be confirmed again\.$/);
+      await run("$('askYes').click(); await new Promise((r) => setTimeout(r, 400));");
+      assert.deepEqual(splitSets(), { 'batch-1': { 'moonstone-ring-a': 'A', 'moonstone-ring-b': 'B' } });
+      assert.deepEqual(await run("return [...document.querySelectorAll('#pieces .row b')].map((b) => b.textContent)"),
+        ['Moonstone ring (group A)', 'Hoop earrings', 'Moonstone ring (group B)', 'Opal pendant']);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1-A] .meta').textContent"), /piece 1 of the set, priced apart/);
+      assert.equal(fs.existsSync(pricedFile('batch-1')), false, "the set's own line is gone");
+      const groupA = JSON.parse(fs.readFileSync(pricedFile('batch-1-A'), 'utf8'));
+      assert.deepEqual([groupA.metal, groupA.weight_grams, groupA.components[0].name, groupA.confirmed], ['sterling', 4.2, 'Moonstone', null]);
+      assert.equal(await run("return $('exportBtn').textContent"), 'Save price sheet (1)', 'the tick on the set went with it');
+      await run("document.querySelector('#pieces .row[data-id=batch-1-B] [data-act=price]').click();");
+      assert.match(await run("return $('pieceHint').textContent"), /^Group B, piece 2 of the set, priced apart from the others\. 1h 45m of making time/);
+      await run("$('pWeight').value = '6'; updatePiece(); $('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400));");
+      assert.deepEqual([JSON.parse(fs.readFileSync(pricedFile('batch-1-B'), 'utf8')).confirmed.weight_grams, JSON.parse(fs.readFileSync(pricedFile('batch-1-A'), 'utf8')).weight_grams], [6, 4.2]);
+      await shot('7-groups-main');
+      // back on one letter it is one set again; it asks first, as group B's pricing goes
+      await run("document.querySelector('#pieces .row[data-id=batch-1-B] [data-act=groups]').click();");
+      assert.equal(await run("return $('groupRows').querySelectorAll('input:checked')[1].value"), 'B');
+      await run("$('groupRows').children[1].querySelector('input[value=A]').click(); $('groupsSave').click(); await new Promise((r) => setTimeout(r, 200));");
+      assert.match(await run("return $('askDlg').open && $('askText').textContent"), /^What was entered for group B is forgotten\. The confirmed price of \$\d+ for group B is dropped, to be confirmed again\.$/);
+      await run("$('askYes').click(); await new Promise((r) => setTimeout(r, 400));");
+      assert.deepEqual([splitSets(), fs.existsSync(pricedFile('batch-1-A')), fs.existsSync(pricedFile('batch-1-B'))], [{}, false, false]);
+      assert.equal(JSON.parse(fs.readFileSync(pricedFile('batch-1'), 'utf8')).weight_grams, 4.2);
+      assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .meta').textContent"), /a set: 1 of 2 finished, one price/);
       // the menu reaches the page, and is ignored while a box is open
       win.webContents.send('menu', 'about');
       await pause(300);

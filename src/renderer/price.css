@@ -35,8 +35,15 @@
 .row .prices .m.unconfirmed { font-weight: 600; }
 .row .prices .m.unconfirmed small { color: var(--muted); }
 /* two buttons to a line: one above the other, so the prices keep their room */
-.row .acts { flex-direction: column; align-items: stretch; }
+.row .acts { flex-direction: column; align-items: stretch; margin-left: auto; }
+.row .name { flex-basis: 150px; }
 .row .acts button { padding-top: 4px; padding-bottom: 4px; white-space: nowrap; }
+
+/* the groups box: a letter for each piece of a set */
+#groupRows .choice { cursor: default; }
+#groupRows .segmented { flex: none; }
+#groupRows .segmented label { position: relative; }
+#groupRows .segmented span { padding: 3px 11px; }
 
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 16px; }

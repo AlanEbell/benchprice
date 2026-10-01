@@ -190,6 +190,90 @@ test('pieces added together are one set with one price; custom pieces stand alon
   assert.equal(row[header.indexOf('piece_ids')], 'band-a; band-b; band-c');
 });
 
+test('a set divides into groups priced apart, and goes back to one', () => {
+  const item = (extra) => ({
+    schema_version: 1, sku: '', type: 'earrings', photo: null, quantity: 1, notes: '', created_at: '2026-09-01T09:00:00-04:00', name: 'Spiral earrings', batch_id: 'batch-e',
+    started_at: '2026-09-01T09:00:00-04:00', status: 'finished', finished_at: '2026-09-20T10:00:00-04:00', split_from: null, time_entries: [], ...extra,
+  });
+  const write = (it) => fs.writeFileSync(path.join(dir, 'items', `${it.id}.json`), JSON.stringify(it));
+  write(item({ id: 'e1', sequence: 20, total_seconds: 3600 }));
+  write(item({ id: 'e2', sequence: 21, total_seconds: 3600 }));
+  write(item({ id: 'e3', sequence: 22, total_seconds: 5400 }));
+  write(item({ id: 'e4', sequence: 23, total_seconds: 1800, status: 'in_progress', finished_at: null }));
+  write(item({ id: 'e5', sequence: 24, total_seconds: 900, type: 'custom' }));
+  const priced = (id) => path.join(dir, 'pricing', 'items', `${id}.json`);
+  const lines = () => book.listGroups({ includeBench: true }).filter((g) => g.of_set && g.of_set.id === 'batch-e');
+  const line = (id) => lines().find((g) => g.id === id);
+
+  // one set to start, priced and confirmed as one
+  book.confirmPrice('batch-e', { metal: 'sterling', weight_grams: 3, components: [{ name: 'Garnet', quantity: 1, unit_cost: 12 }], notes: 'Garnets' });
+  let whole = line('batch-e');
+  assert.deepEqual([whole.group, whole.label, whole.of_set.pieces.map((i) => i.id).join(), whole.of_set.pieces[0].group], [null, 'Spiral earrings', 'e1,e2,e3,e4', null]);
+  assert.deepEqual(whole.of_set.lines, [{ id: 'batch-e', label: 'Spiral earrings', group: null, entered: true, confirmed: whole.priced.price }]);
+  assert.equal(book.listGroups().find((g) => g.id === 'moonstone-ring-1').of_set, null, 'a piece on its own has no groups');
+
+  // two groups: each a line of its own, starting with what was entered for the set, unconfirmed
+  assert.deepEqual(book.setGroups('batch-e', { e1: 'A', e2: 'a', e3: 'B', e4: 'B' }), { split: true, groups: ['A', 'B'] });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'pricing', 'splits.json'), 'utf8')).sets, { 'batch-e': { e1: 'A', e2: 'A', e3: 'B', e4: 'B' } });
+  assert.deepEqual(lines().map((g) => [g.id, g.label, g.group, g.set, g.quantity, g.seconds_per_piece, g.status]), [
+    ['batch-e-A', 'Spiral earrings (group A)', 'A', true, 2, 3600, 'finished'],
+    ['batch-e-B', 'Spiral earrings (group B)', 'B', true, 2, 5400, 'part_finished'], // its own finished piece, not the set's average
+  ]);
+  assert.deepEqual(book.listGroups().filter((g) => g.name === 'Spiral earrings').map((g) => g.id), ['e5', 'batch-e-A', 'batch-e-B'], 'the custom piece still alone; group A before group B');
+  for (const id of ['batch-e-A', 'batch-e-B']) {
+    const p = book.getPricing(id);
+    assert.deepEqual([p.item_id, p.metal, p.weight_grams, p.components.length, p.notes, p.confirmed], [id, 'sterling', 3, 1, 'Garnets', null]);
+  }
+  assert.equal(fs.existsSync(priced('batch-e')), false, "the set's own line is gone");
+  assert.deepEqual(line('batch-e-A').of_set.pieces.map((i) => [i.group, i.line]), [['A', 'batch-e-A'], ['A', 'batch-e-A'], ['B', 'batch-e-B'], ['B', 'batch-e-B']]);
+
+  // priced apart
+  const b = book.confirmPrice('batch-e-B', { components: [{ name: 'Sapphire', quantity: 1, unit_cost: 60 }], notes: 'Sapphires' });
+  assert.ok(b.price > line('batch-e-A').priced.price);
+  assert.deepEqual([line('batch-e-A').pricing.notes, line('batch-e-A').priced.confirmed, b.pieces], ['Garnets', null, 2]);
+  assert.deepEqual(line('batch-e-A').of_set.lines.map((l) => [l.group, l.entered, l.confirmed]), [['A', true, null], ['B', true, b.price]]);
+
+  // a piece moved to a new group takes a copy of what its old group had; a group it only leaves keeps its confirmed price
+  book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'B', e4: 'C' });
+  const c = line('batch-e-C');
+  assert.deepEqual([c.set, c.label, c.pricing.notes, c.pricing.confirmed, c.seconds_per_piece, c.status], [false, 'Spiral earrings (group C)', 'Sapphires', null, 1800, 'in_progress']);
+  assert.deepEqual([line('batch-e-B').pricing.confirmed.price, line('batch-e-B').set], [b.price, false]);
+  const out = path.join(dir, 'groups.csv');
+  assert.equal(book.exportCsv(out), 4, 'every finished line: the ring, groups A and B, the custom piece');
+  const rows = fs.readFileSync(out, 'utf8').trim().split('\r\n').map((row) => row.split(','));
+  const row = rows.find((r) => r[0] === 'batch-e-A');
+  assert.deepEqual([row[1], row[rows[0].indexOf('quantity')], row[rows[0].indexOf('piece_ids')]], ['Spiral earrings (group A)', '2', 'e1; e2']);
+  assert.deepEqual(book.sendBack(['e3']), [{ id: 'e3', name: 'Spiral earrings' }]);
+  assert.equal(line('batch-e-B').status, 'not_started');
+
+  // a group left with no pieces is forgotten
+  book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'C', e4: 'C' });
+  assert.deepEqual(lines().map((g) => g.id), ['batch-e-A', 'batch-e-C']);
+  assert.equal(fs.existsSync(priced('batch-e-B')), false);
+  // a piece added to the set since goes in the first group
+  write(item({ id: 'e6', sequence: 25, total_seconds: 3600 }));
+  assert.deepEqual(line('batch-e-A').pieces.map((i) => i.id), ['e1', 'e2', 'e6']);
+  assert.throws(() => book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'C', e4: 'C' }), /Spiral earrings \(6 of 6\) needs a group/);
+
+  // refused changes save nothing
+  for (const bad of [{ e1: 'A', e2: 'A', e3: 'B' }, { e1: 'A', e2: 'A', e3: 'B', e4: '1', e6: 'A' }, { e1: 'A', e2: 'A', e3: 'B', e4: 'AB', e6: 'A' },
+    { e1: 'A', e2: 'A', e3: 'B', e4: 'B', e6: 'A', e5: 'A' }]) {
+    assert.throws(() => book.setGroups('batch-e', bad), PricingError);
+  }
+  for (const bad of ['moonstone-ring-1', 'batch-nobody', '../settings', 'e5']) assert.throws(() => book.setGroups(bad, { e1: 'A' }), /Only a set of two or more/);
+  assert.deepEqual(lines().map((g) => g.id), ['batch-e-A', 'batch-e-C']);
+
+  // all on one letter: one set with one price again, starting from what its first piece's group had
+  book.confirmPrice('batch-e-A', {});
+  assert.deepEqual(book.setGroups('batch-e', { e1: 'B', e2: 'B', e3: 'B', e4: 'B', e6: 'B' }), { split: false, groups: ['B'] });
+  whole = line('batch-e');
+  assert.deepEqual([lines().length, whole.group, whole.label, whole.quantity, whole.pricing.notes, whole.pricing.confirmed], [1, null, 'Spiral earrings', 5, 'Garnets', null]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'pricing', 'splits.json'), 'utf8')).sets, {});
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'pricing', 'items')), ['batch-e.json']);
+  assert.deepEqual(book.setGroups('batch-e', Object.fromEntries(whole.of_set.pieces.map((i) => [i.id, 'A']))), { split: false, groups: ['A'] }, 'no change is fine');
+  assert.equal(line('batch-e').pricing.notes, 'Garnets');
+});
+
 test('confirming writes the price into the file, and it holds until repriced', () => {
   assert.throws(() => book.confirmPrice('moonstone-ring-1', {}), /before confirming/);
   const done = book.confirmPrice('moonstone-ring-1', { metal: 'sterling', weight_grams: 4.2, components: [{ name: 'Moonstone', quantity: 1, unit_cost: 30 }] });
