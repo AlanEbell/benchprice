@@ -1,5 +1,5 @@
 'use strict';
-/* global iconSvg, price, metalPerGram, METHODS */
+/* global iconSvg, price, metalPerGram, METHODS, helpHtml */
 // The window. It keeps no data of its own: every action goes to the main process,
 // which answers with the whole current state, and the page is redrawn from that.
 // The price arithmetic (../core/arithmetic.js) is loaded here too, so the piece box
@@ -35,7 +35,9 @@ const pad = (n) => String(n).padStart(2, '0');
 const fmtDur = (secs) => { const m = Math.round(secs / 60); return `${Math.floor(m / 60)}h ${pad(m % 60)}m`; };
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const dollars = (n) => (Number.isInteger(Number(n)) ? money0(n) : money(n)); // $32, or $61.10: never $61.1
 const pct = (share) => `${Math.round(share * 1000) / 10}%`;
+const fmtWhen = (iso) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 const pieces = (n) => `${n} piece${n === 1 ? '' : 's'}`;
 const photoUrl = (name) => `bench-photo://library/${encodeURIComponent(name)}`;
@@ -57,7 +59,7 @@ function stripHtml() {
     <span class="fact"><b>${money0(s.labor_rate)}</b> an hour</span>
     <span class="fact"><b>${pct(state.overheadShare)}</b> TimeOverhead<small>${overrideOn ? `set by hand; BenchClock says ${pct(state.measuredOverhead)}` : 'from BenchClock'}</small></span>
     <span class="fact"><b>${esc(state.methods[s.default_method].name)}</b><small>unless a piece says otherwise</small></span>
-    <span class="fact"><small>Spot</small> <b>${money0(s.spot.silver)}</b> silver, <b>${money0(s.spot.gold)}</b> gold, <b>${money0(s.spot.platinum)}</b> platinum <small>per troy oz</small></span>
+    <span class="fact"><small>Spot</small> <b>${dollars(s.spot.silver)}</b> silver, <b>${dollars(s.spot.gold)}</b> gold, <b>${dollars(s.spot.platinum)}</b> platinum <small>per troy oz${s.spot_fetched ? `, from ${esc(s.spot_fetched.source)} ${fmtWhen(s.spot_fetched.at)}` : ''}</small></span>
     ${chips.join('')}`;
 }
 
@@ -464,6 +466,9 @@ function openSettings() {
   $('sSilver').value = s.spot.silver;
   $('sGold').value = s.spot.gold;
   $('sPlatinum').value = s.spot.platinum;
+  $('sAutoSpot').checked = s.auto_spot === true;
+  fetchedSpot = null;
+  spotNote('');
   $('metalRows').replaceChildren(...s.metals.map(metalRow));
   updateMetals();
   $('sFactor').value = s.cost_plus.factor;
@@ -476,6 +481,39 @@ function openSettings() {
   (document.querySelector(`input[name=sRoundMode][value=${s.round_mode || 'up'}]`) || {}).checked = true;
   $('settingsDlg').showModal();
   $('sRate').focus();
+}
+
+let fetchedSpot = null; // what Fetch live prices last put in the fields of the open settings box
+
+function spotNote(text, bad = false) {
+  $('spotNote').textContent = text;
+  $('spotNote').classList.toggle('bad', bad);
+}
+
+/** Today's spot prices from the internet into the three fields, to be looked over: nothing is saved until Save. */
+$('spotFetch').onclick = async () => {
+  $('spotFetch').disabled = true;
+  spotNote('Fetching\u2026');
+  const reply = await window.pricebook.call('fetchSpot'); // not api(): a failure belongs in the box, beside the button
+  $('spotFetch').disabled = false;
+  if (!reply.ok) { spotNote(reply.error, true); return; }
+  fetchedSpot = reply.result;
+  const { spot, source, at } = fetchedSpot;
+  $('sSilver').value = spot.silver;
+  $('sGold').value = spot.gold;
+  $('sPlatinum').value = spot.platinum;
+  updateMetals();
+  spotNote(`From ${source}, as of ${fmtWhen(at)}. Press Save to price with them.`);
+};
+
+/** As the app starts, when Settings says to: today's spot prices fetched and saved in one go. */
+async function autoSpot() {
+  try {
+    const { spot, source } = await api('updateSpot');
+    toast(`Spot prices from ${source}: ${money(spot.silver)} silver, ${money(spot.gold)} gold, ${money(spot.platinum)} platinum.`);
+  } catch (error) {
+    toast(`${error.message} The prices here use the spot prices saved last.`);
+  }
 }
 
 $('settingsBtn').onclick = openSettings;
@@ -493,6 +531,9 @@ $('settingsForm').addEventListener('submit', async (ev) => {
     overhead_share: $('sOverhead').value === '' ? null : Number($('sOverhead').value) / 100,
     default_method: Number((document.querySelector('input[name=sMethod]:checked') || {}).value || 2),
     spot: settingsSpot(),
+    // still as fetched, or typed over since
+    spot_fetched: fetchedSpot && ['silver', 'gold', 'platinum'].every((base) => settingsSpot()[base] === fetchedSpot.spot[base]) ? { at: fetchedSpot.at, source: fetchedSpot.source } : undefined,
+    auto_spot: $('sAutoSpot').checked,
     metals: [...$('metalRows').children].map(metalFromRow),
     cost_plus: { factor: $('sFactor').value },
     loaded: { margin: Number($('sMargin2').value) / 100 },
@@ -504,6 +545,18 @@ $('settingsForm').addEventListener('submit', async (ev) => {
   $('settingsDlg').close();
   toast('Settings saved. Every price is worked out afresh.');
 });
+
+// ---- help ---------------------------------------------------------------
+
+/** The help page (help.js), written afresh each time from the settings as they stand. */
+function openHelp() {
+  $('helpBody').innerHTML = helpHtml(state);
+  $('helpDlg').showModal();
+  $('helpBody').scrollTop = 0;
+  $('helpClose').focus();
+}
+$('helpBtn').onclick = openHelp;
+$('helpClose').onclick = () => $('helpDlg').close();
 
 // ---- export, about, menu -----------------------------------------------
 
@@ -522,7 +575,7 @@ function openAbout() {
 }
 $('aboutClose').onclick = () => $('aboutDlg').close();
 
-const menuActions = { settings: openSettings, export: exportSheet, about: openAbout, reload: () => api('state') };
+const menuActions = { settings: openSettings, export: exportSheet, about: openAbout, help: openHelp, reload: () => api('state') };
 window.pricebook.onMenu((action) => {
   if (document.querySelector('dialog[open]')) return; // one thing at a time
   menuActions[action]();
@@ -530,6 +583,6 @@ window.pricebook.onMenu((action) => {
 
 // ---- start -------------------------------------------------------------
 
-api('state');
+api('state').then(() => { if (state.settings.auto_spot) autoSpot(); });
 // Pick up pieces finished in BenchClock meanwhile when the window is returned to.
 window.addEventListener('focus', () => { if (!document.querySelector('dialog[open]')) api('state'); });

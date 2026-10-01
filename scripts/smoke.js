@@ -7,6 +7,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { app } = require('electron');
 
+const { PricingError } = require('../src/core/pricing.js');
+let spotDown = false; // what the stand-in for gold-api.com does, see the end
+
 const dataDir = (process.argv.find((a) => a.startsWith('--data-dir=')) || '').slice(11);
 assert.ok(dataDir, 'pass --data-dir=<empty folder>');
 
@@ -116,10 +119,25 @@ app.on('browser-window-created', (event, win) => {
       assert.equal(await run("return $('settingsDlg').open && $('sRate').value"), '50');
       assert.equal(await run("return $('metalRows').children.length"), 9);
       await shot('4-settings');
+      // live spot prices land in the fields to be looked over, saved only by Save; a failure is said beside the button
+      spotDown = true;
+      await run("$('spotFetch').click(); await new Promise((r) => setTimeout(r, 300));");
+      assert.deepEqual(await run("return [$('spotNote').textContent, $('spotNote').classList.contains('bad'), $('sSilver').value, $('spotFetch').disabled]"),
+        ["Couldn't reach gold-api.com for the spot prices. Is this computer online?", true, '32', false]);
+      spotDown = false;
+      await run("$('spotFetch').click(); await new Promise((r) => setTimeout(r, 300));");
+      assert.deepEqual(await run("return [$('sSilver').value, $('sGold').value, $('sPlatinum').value, $('spotNote').classList.contains('bad')]"), ['61.1', '4179.1', '1719', false]);
+      assert.match(await run("return $('spotNote').textContent"), /^From gold-api\.com, as of .+\. Press Save to price with them\.$/);
+      assert.equal(await run("return $('metalRows').children[0].querySelector('[data-m=per_gram]').value"), '2.0896', 'the per-gram column follows: 61.1 / 31.1035 x .925 x 1.15');
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'settings.json'), 'utf8')).spot.silver, 32, 'nothing saved yet');
+      assert.equal(await run("return $('sAutoSpot').checked"), false, 'fetching at startup is off until asked for');
+      await run("$('sAutoSpot').click()");
+      await shot('4b-fetched');
       await run("$('sRate').value = '60'; $('sSilver').value = '40'; $('sOverhead').value = '35'; $('sRound').value = '5'; document.querySelector('input[name=sMethod][value=\"1\"]').checked = true; document.querySelector('input[name=sRoundMode][value=nearest]').checked = true;");
       await run("document.querySelector('#settingsForm button[type=submit]').click(); await new Promise((r) => setTimeout(r, 400));");
       const settings = JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'settings.json'), 'utf8'));
       assert.deepEqual([settings.labor_rate, settings.spot.silver, settings.overhead_share, settings.default_method, settings.metals.length, settings.round_to, settings.round_mode], [60, 40, 0.35, 1, 9, 5, 'nearest']);
+      assert.deepEqual([settings.spot.gold, settings.spot_fetched, settings.auto_spot], [4179.1, null, true], 'the silver was typed over, so the spot prices are no longer as fetched');
       assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen').textContent"), /\$\d+[05]$/, 'a multiple of $5');
       assert.match(await run("return $('strip').textContent"), /35% TimeOverhead.*set by hand; BenchClock says 30\.1%/);
       const after = await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .m:nth-child(3)').textContent");
@@ -189,6 +207,19 @@ app.on('browser-window-created', (event, win) => {
       assert.deepEqual([splitSets(), fs.existsSync(pricedFile('batch-1-A')), fs.existsSync(pricedFile('batch-1-B'))], [{}, false, false]);
       assert.equal(JSON.parse(fs.readFileSync(pricedFile('batch-1'), 'utf8')).weight_grams, 4.2);
       assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .meta').textContent"), /a set: 1 of 2 finished, one price/);
+      // the help page shows the methods with the settings as they stand, its example worked by the same arithmetic
+      win.webContents.send('menu', 'help');
+      await pause(300);
+      assert.equal(await run("return $('helpDlg').open"), true);
+      const helpText = await run("return $('helpBody').textContent");
+      for (const said of [/Method 1: Cost-plus/, /Method 2: Loaded hourly/, /Method 3: Tiered materials/, /set by hand in Settings at 35%; BenchClock measures 30\.1%/,
+        /Labor: 2\.5 h × \$60\$150\.00/, /Metal: 5 g × \$1\.37\$6\.84/, /now to the nearest \$5/]) assert.match(helpText, said);
+      const example = await run("const { p } = helpExample(state); return [1, 2, 3].map((m) => money(p.methods[m].price))");
+      for (const figure of example) assert.ok(helpText.includes(`the price${figure}`), `${figure} is on the help page`);
+      await shot('8-help');
+      await run("$('helpBody').scrollTop = 1150;");
+      await shot('8b-help-methods');
+      await run("$('helpClose').click()");
       // the menu reaches the page, and is ignored while a box is open
       win.webContents.send('menu', 'about');
       await pause(300);
@@ -196,6 +227,19 @@ app.on('browser-window-created', (event, win) => {
       win.webContents.send('menu', 'settings');
       await pause(200);
       assert.equal(await run("return $('settingsDlg').open"), false);
+      // spot prices at startup, as Settings now says: a failure leaves the saved ones, then the window is opened afresh and they are fetched
+      const savedSettings = () => JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'settings.json'), 'utf8'));
+      spotDown = true;
+      await run("await autoSpot()");
+      assert.equal(await run("return $('toast').textContent"), "Couldn't reach gold-api.com for the spot prices. Is this computer online? The prices here use the spot prices saved last.");
+      assert.equal(savedSettings().spot.silver, 40);
+      spotDown = false;
+      win.webContents.reload();
+      await pause(1200);
+      assert.deepEqual([savedSettings().spot, savedSettings().spot_fetched], [{ silver: 61.1, gold: 4179.1, platinum: 1719 }, { at: '2026-10-01T20:00:53.000Z', source: 'gold-api.com' }]);
+      assert.equal(await run("return $('toast').textContent"), 'Spot prices from gold-api.com: $61.10 silver, $4,179.10 gold, $1,719.00 platinum.');
+      assert.match(await run("return $('strip').textContent"), /\$61\.10 silver, \$4,179\.10 gold, \$1,719 platinum per troy oz, from gold-api\.com /);
+      await shot('9-auto-spot');
       console.log('SMOKE OK');
     } catch (error) {
       console.error('SMOKE FAILED\n', error);
@@ -204,4 +248,10 @@ app.on('browser-window-created', (event, win) => {
     app.quit();
   });
 });
+// Fetch live prices is answered here, so the run depends on neither the internet nor today's prices.
+const spot = require('../src/core/spot.js');
+spot.fetchSpot = async () => {
+  if (spotDown) throw new PricingError("Couldn't reach gold-api.com for the spot prices. Is this computer online?");
+  return { spot: { silver: 61.1, gold: 4179.1, platinum: 1719 }, source: 'gold-api.com', at: '2026-10-01T20:00:53.000Z' };
+};
 require('../src/main/main.js');

@@ -1,9 +1,10 @@
 'use strict';
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, protocol, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, net, protocol, shell } = require('electron');
 
 const { PriceBook, PricingError, METHODS } = require('../core/pricing.js');
+const spot = require('../core/spot.js');
 const { version, homepage } = require('../../package.json');
 
 const PHOTO_NAME = /^[0-9a-f]{16}\.jpg$/;
@@ -37,6 +38,13 @@ const api = {
   clearPricing: ({ id }) => book.clearPricing(id),
   sendBack: ({ ids }) => book.sendBack(ids),
   setGroups: ({ id, letters }) => book.setGroups(id, letters),
+  fetchSpot: () => spot.fetchSpot({ fetch: net.fetch }), // Electron's fetch follows the system's proxy
+  /** Fetched and saved in one go, as the app starts when Settings says to. */
+  async updateSpot() {
+    const live = await spot.fetchSpot({ fetch: net.fetch });
+    book.saveSettings({ spot: live.spot, spot_fetched: { at: live.at, source: live.source } });
+    return live;
+  },
 
   async exportCsv({ ids = [] } = {}) {
     const picked = await dialog.showSaveDialog(mainWindow, {
@@ -77,6 +85,7 @@ function buildMenu() {
   };
   const line = { type: 'separator' };
   const about = { label: 'About BenchPrice', click: toPage('about') };
+  const help = { label: 'How BenchPrice works', accelerator: 'F1', click: toPage('help') };
   return Menu.buildFromTemplate([
     ...(mac ? [{ label: app.name, submenu: [about, line, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, line, { role: 'quit' }] }] : []),
     {
@@ -98,7 +107,7 @@ function buildMenu() {
         ...(app.isPackaged ? [] : [line, { role: 'reload' }, { role: 'toggleDevTools' }]),
       ],
     },
-    ...(mac ? [] : [{ label: '&Help', role: 'help', submenu: [about] }]),
+    { label: '&Help', role: 'help', submenu: mac ? [help] : [help, line, about] },
   ]);
 }
 

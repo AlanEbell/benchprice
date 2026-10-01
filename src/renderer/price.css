@@ -89,6 +89,20 @@ table.metals td:nth-child(3) input { width: 90px; }
 .card .how { display: block; }
 .card .how span { display: block; }
 
+.fetch-spot { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; margin-top: 10px; }
+.auto-spot { display: flex; margin-top: 10px; }
+
+/* the help page: prose that scrolls between its title and its Close button */
+#helpDlg { width: min(820px, calc(100vw - 28px)); }
+#helpDlg[open] { display: flex; flex-direction: column; }
+.help { overflow-y: auto; min-height: 0; margin-top: 8px; padding-right: 12px; font-size: 14px; -webkit-user-select: text; user-select: text; cursor: auto; }
+.help h3 { font-size: 15px; font-weight: 600; margin: 22px 0 4px; }
+.help ol, .help ul { margin: 6px 0; padding-left: 22px; }
+.help li { margin: 4px 0; }
+.help .formula { margin: 8px 0; padding: 8px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; font-weight: 600; }
+.help .breakdown { margin-top: 10px; }
+.help kbd { font: inherit; font-size: 12.5px; border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; background: var(--soft); }
+
 .method-settings { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 10px; }
 .method-settings summary b { color: var(--ink); font-size: 14px; }
 .tiers { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 8px 10px; align-items: center; margin-top: 12px; font-size: 14px; }

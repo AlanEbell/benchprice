@@ -14,6 +14,7 @@
   <header class="top">
     <h1>BenchPrice</h1>
     <span class="spacer"></span>
+    <button id="helpBtn" title="How the app works, and how each price is worked out (F1)">Help</button>
     <button id="settingsBtn" title="Labor rate, spot prices, metals and the three pricing methods">Settings</button>
     <button id="exportBtn" title="A CSV of the ticked pieces, or every finished piece, with all three prices">Save price sheet</button>
   </header>
@@ -141,12 +142,17 @@
     <div class="field-label">Price by, unless a piece says otherwise</div>
     <div class="segmented" id="sMethods" role="radiogroup"></div>
 
-    <div class="field-label">Spot prices <span class="muted">- dollars a troy ounce; they move daily and are yours to keep current</span></div>
+    <div class="field-label">Spot prices <span class="muted">- dollars a troy ounce; they move daily: type them in, or fetch today's</span></div>
     <div class="three">
       <div><label for="sSilver">Silver</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sSilver" min="0" step="0.01"></div></div>
       <div><label for="sGold">Gold</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sGold" min="0" step="0.01"></div></div>
       <div><label for="sPlatinum">Platinum</label><div class="unit-field"><span class="unit">$</span><input type="number" id="sPlatinum" min="0" step="0.01"></div></div>
     </div>
+    <div class="fetch-spot">
+      <button type="button" id="spotFetch" title="Look up today's silver, gold and platinum prices online, at gold-api.com. Nothing is saved until you press Save.">Fetch live prices</button>
+      <span class="hint" id="spotNote"></span>
+    </div>
+    <label class="check auto-spot" title="Looks the prices up on gold-api.com as the app opens and saves them. Confirmed prices stay as they are."><input type="checkbox" id="sAutoSpot"> Fetch them each time BenchPrice starts</label>
 
     <div class="field-label">Metals <span class="muted">- priced from spot by purity and the premium your supplier charges over spot, or by a price per gram</span></div>
     <table class="parts metals" id="metalsTable">
@@ -197,6 +203,12 @@
   </form>
 </dialog>
 
+<dialog id="helpDlg">
+  <h2>How BenchPrice works</h2>
+  <div class="help" id="helpBody"></div>
+  <div class="actions"><span class="spacer"></span><button type="button" class="primary" id="helpClose">Close</button></div>
+</dialog>
+
 <dialog id="aboutDlg">
   <div class="about">
     <img src="icon.png" alt="" width="84" height="84">
@@ -211,6 +223,7 @@
 <div id="toast" hidden></div>
 <script src="icons.js"></script>
 <script src="../core/arithmetic.js"></script>
+<script src="help.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

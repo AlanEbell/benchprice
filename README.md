@@ -49,7 +49,12 @@ first time; the release notes say what to click.
   Selling fees and rounding (to the nearest $5, say, going up, to the nearest or down) are applied
   to all three, last.
 - **Metal prices** come from spot prices per troy ounce that you keep current in *Settings*,
-  by purity and your supplier's premium over spot. Gold-filled, brass and anything else can be
+  by purity and your supplier's premium over spot. Type the spot prices in, or press *Fetch
+  live prices* there to look up today's silver, gold and platinum on
+  [gold-api.com](https://gold-api.com); they land in the fields for you to look over, and
+  nothing changes until you press Save. Tick *Fetch them each time BenchPrice starts* to have
+  that done as the app opens. Those are the only times BenchPrice goes online, and confirmed
+  prices stay as they are either way. Gold-filled, brass and anything else can be
   given a price per gram instead. The premium is what the supplier charges over the metal's
   value at spot: sterling wire at $85 an ounce when fine silver is $64 is 85 / (64 x 0.925) - 1,
   or 43.6%. *Add the supplier's premium* on a piece is ticked to start; untick it to price that
@@ -58,6 +63,9 @@ first time; the release notes say what to click.
   three prices, the chosen one, and the cost breakdown.
 - **Settings** (Ctrl+,) holds the labor rate, default method, spot prices, metals, and the
   numbers behind each method.
+- **Help** (F1) explains the app from start to finish and shows how each of the three methods
+  reaches its price: the formula, your own settings in it, and one piece worked through step
+  by step.
 
 ## Where it keeps things
 
@@ -85,8 +93,10 @@ Needs [Node.js](https://nodejs.org) 22 or newer.
 
 - `src/core/arithmetic.js` - the three methods, pure arithmetic. Loaded by the window too.
 - `src/core/pricing.js` - settings, per-piece files, reading BenchClock's pieces, the CSV.
+- `src/core/spot.js` - live spot prices from gold-api.com, the only code that goes online.
 - `src/main/` - the Electron main process: window, menu bar, file dialogs.
-- `src/renderer/` - the window itself. `styles.css` and `icons.js` are shared with BenchClock.
+- `src/renderer/` - the window itself. `styles.css` and `icons.js` are shared with BenchClock;
+  `help.js` is the help page.
 - `build/icon.svg` - the app icon; `npm run icon` renders it to PNG.
 - `scripts/smoke.js` - drives the real app end to end: `npm run smoke -- --data-dir=/tmp/benchprice-smoke`.
 

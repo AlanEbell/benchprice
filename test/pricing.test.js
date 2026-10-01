@@ -102,6 +102,16 @@ test('settings are checked and keep their defaults for anything not saved', () =
   assert.deepEqual(book.settings().metals.map((m) => m.id), ['argentium', 'titanium']);
   book.saveSettings({ round_to: 5, round_mode: 'nearest' });
   assert.deepEqual([book.settings().round_to, book.settings().round_mode], [5, 'nearest']);
+  // spot prices as fetched carry where and when from, until one is typed over; fetching at startup is off unless asked for
+  assert.deepEqual([book.settings().auto_spot, book.settings().spot_fetched], [false, null]);
+  book.saveSettings({ auto_spot: true, spot: { silver: 61.1, gold: 4179.1, platinum: 1719 }, spot_fetched: { at: '2026-10-01T20:00:53Z', source: 'gold-api.com' } });
+  assert.deepEqual([book.settings().auto_spot, book.settings().spot_fetched], [true, { at: '2026-10-01T20:00:53.000Z', source: 'gold-api.com' }]);
+  book.saveSettings({ labor_rate: 66, spot: { silver: 61.1, gold: 4179.1, platinum: 1719 } });
+  assert.equal(book.settings().spot_fetched.source, 'gold-api.com', 'saved again unchanged: still as fetched');
+  book.saveSettings({ spot: { gold: 4200 }, auto_spot: 'yes' });
+  assert.deepEqual([book.settings().auto_spot, book.settings().spot_fetched, book.settings().labor_rate], [false, null, 66]);
+  book.saveSettings({ labor_rate: 65, spot_fetched: { at: 'whenever', source: 'x' } });
+  assert.equal(book.settings().spot_fetched, null);
   book.saveSettings({ tiered: { tiers: [{ up_to: 50, factor: 2.5 }, { up_to: 5, factor: 3 }] } });
   assert.deepEqual(book.settings().tiered.tiers, [{ up_to: 5, factor: 3 }, { up_to: 50, factor: 2.5 }, { up_to: null, factor: 2.5 }]);
 });

@@ -1,9 +1,10 @@
 BenchPrice puts a price on each finished piece of your BenchClock time card: its making time, its metal by weight at today's spot price, its stones and findings, three ways. It reads BenchClock's data folder and keeps its own files beside it. Install BenchClock first.
 
-## New in 1.3.0
+## New in 1.4.0
 
-- **Groups** on a set's line divides the set into groups priced apart, for pieces made together that are not all alike: four pairs of earrings with different stones, say. Give each piece a letter, and the pieces sharing a letter become a line of their own, with its own metal, stones, price and confirmation, on the making time of its own pieces. Each new group starts with a copy of what was entered for the set. Put every piece back on one letter and the set is one line again.
-- From 1.2.0: **Not finished** on a line sends a piece that was marked finished by mistake back to the bench in BenchClock, with all its time and what you entered for its price. For a set it asks which ones.
+- **Fetch live prices** in Settings looks up today's silver, gold and platinum spot prices on gold-api.com and puts them in the fields for you to look over; nothing changes until you press Save. Tick **Fetch them each time BenchPrice starts** to have it done as the app opens. Those are the only times BenchPrice goes online. The line of spot prices at the top says where and when they were fetched. Confirmed prices stay as they are.
+- **Help** (F1, or the Help button) explains the app from start to finish and shows how each of the three methods reaches its price: the formula, your own settings in it, and one piece worked through step by step.
+- From 1.3.0: **Groups** on a set's line divides the set into groups priced apart, for pieces made together that are not all alike.
 
 ## Which file do I need?
 

@@ -34,6 +34,8 @@ const DEFAULT_SETTINGS = {
   default_method: 2,
   overhead_share: null, // null: worked out from BenchClock; a number from 0 to 1 overrides it
   spot: { silver: 32, gold: 2400, platinum: 1000 }, // dollars per troy ounce
+  spot_fetched: null, // { at, source } while the spot prices are as they were fetched; null once typed in
+  auto_spot: false, // fetch the spot prices each time the app starts (see spot.js)
   metals: [
     { id: 'sterling', name: 'Sterling silver', base: 'silver', purity: 0.925, premium: 0.15 },
     { id: 'fine-silver', name: 'Fine silver', base: 'silver', purity: 0.999, premium: 0.15 },
@@ -160,7 +162,13 @@ class PriceBook {
       for (const base of ['silver', 'gold', 'platinum']) {
         if (changes.spot[base] !== undefined) next.spot[base] = num(changes.spot[base], `${base[0].toUpperCase()}${base.slice(1)} spot price`, { min: 0 });
       }
+      if (['silver', 'gold', 'platinum'].some((base) => next.spot[base] !== current.spot[base])) next.spot_fetched = null; // typed in, unless said otherwise below
     }
+    if (changes.spot_fetched !== undefined) {
+      const fetched = changes.spot_fetched;
+      next.spot_fetched = fetched && Number.isFinite(Date.parse(fetched.at)) ? { at: new Date(fetched.at).toISOString(), source: String(fetched.source ?? '').trim() } : null;
+    }
+    if (changes.auto_spot !== undefined) next.auto_spot = changes.auto_spot === true;
     if (changes.metals !== undefined) {
       if (!Array.isArray(changes.metals) || !changes.metals.length) throw new PricingError('Keep at least one metal.');
       next.metals = changes.metals.map((m, i) => {
