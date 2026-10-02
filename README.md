@@ -59,8 +59,18 @@ first time; the release notes say what to click.
   value at spot: sterling wire at $85 an ounce when fine silver is $64 is 85 / (64 x 0.925) - 1,
   or 43.6%. *Add the supplier's premium* on a piece is ticked to start; untick it to price that
   piece's metal at its bare value, for metal you did not buy at the supplier's price.
-- **Save price sheet** writes a CSV of the ticked pieces (or every finished piece) with all
-  three prices, the chosen one, and the cost breakdown.
+- **Report or export** - one box, three choices, the same as in BenchClock. *Which pieces*:
+  the finished ones, the ones you ticked on the list, the ones on the bench, or everything.
+  *Finished on which days*: this week, last month, or any dates you set; a line is in when a
+  piece of it was finished on those days. Then *Save as PDF* for a report to read and print,
+  or *Save as CSV* for a spreadsheet, one row a line with all three prices, the chosen one and
+  the cost breakdown. The PDF opens with every line and its price at a glance, then goes
+  through each one: its making time (each piece of a set, and the average the labor is worked
+  on), its metal by weight, every stone and finding, materials and labor, and how each of the
+  three methods reached its figure. A confirmed price stands with the figures it was confirmed
+  from, whatever spot prices and settings have done since; the top of the report says which
+  spot prices the confirmed prices rest on, and that any price not yet confirmed is worked
+  from today's.
 - **Settings** (Ctrl+,) holds the labor rate, default method, spot prices, metals, and the
   numbers behind each method.
 - **Help** (F1) explains the app from start to finish and shows how each of the three methods
@@ -92,9 +102,11 @@ Needs [Node.js](https://nodejs.org) 22 or newer.
     npm test                  # the arithmetic and the files (no window needed)
 
 - `src/core/arithmetic.js` - the three methods, pure arithmetic. Loaded by the window too.
-- `src/core/pricing.js` - settings, per-piece files, reading BenchClock's pieces, the CSV.
+- `src/core/pricing.js` - settings, per-piece files, reading BenchClock's pieces, what a report
+  covers, the CSV.
 - `src/core/spot.js` - live spot prices from gold-api.com, the only code that goes online.
-- `src/main/` - the Electron main process: window, menu bar, file dialogs.
+- `src/main/` - the Electron main process: window, menu bar, file dialogs, and the PDF report
+  (`report.js` lays it out).
 - `src/renderer/` - the window itself. `styles.css` and `icons.js` are shared with BenchClock;
   `help.js` is the help page.
 - `build/icon.svg` - the app icon; `npm run icon` renders it to PNG.

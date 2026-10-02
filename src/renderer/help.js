@@ -44,7 +44,9 @@ function helpHtml(state) {
       <i>Or set the price yourself</i>, which wins over every method.</li>
     <li><b>Confirm price.</b> That writes the price into the piece's file with the figures behind it and the date. From then on it is the piece's price,
       whatever spot prices and settings do later. If the live figure moves, the line says <i>Confirmed, now $X</i>; confirm again to reprice. <i>Save</i> keeps what you entered without confirming.</li>
-    <li><b>Save price sheet</b> writes a spreadsheet file (CSV) of the ticked lines, or of every finished piece when none is ticked, with all three prices and the costs behind them.</li>
+    <li><b>Report or export</b> makes a report of the pieces you choose: the finished ones, the ones you ticked, the bench, or everything, and only those finished on certain days if you like.
+      <i>Save as PDF</i> is a report to read and print: every line with its price, then each one gone through, with its making hours, its metal, stones and findings, its labor and all three prices.
+      <i>Save as CSV</i> is the same figures as a spreadsheet file, one row a line.</li>
   </ol>
 
   <h3>Sets, groups and single pieces</h3>

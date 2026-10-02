@@ -16,7 +16,7 @@
     <span class="spacer"></span>
     <button id="helpBtn" title="How the app works, and how each price is worked out (F1)">Help</button>
     <button id="settingsBtn" title="Labor rate, spot prices, metals and the three pricing methods">Settings</button>
-    <button id="exportBtn" title="A CSV of the ticked pieces, or every finished piece, with all three prices">Save price sheet</button>
+    <button id="reportBtn" title="A PDF report or a CSV file: of the finished pieces or the ones you choose, with their hours, materials and prices">Report or export</button>
   </header>
 
   <section class="strip" id="strip"></section>
@@ -29,7 +29,7 @@
     <label class="check"><input type="checkbox" id="showBench"> Show the bench too</label>
   </div>
   <div class="list" id="pieces"></div>
-  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. <b>Groups</b> on a set's line divides it into groups priced apart, for pieces with different stones. Ticks pick the lines for <b>Save price sheet</b>. Finished something by mistake? <b>Not finished</b> on its line sends it back to the bench in BenchClock.
+  <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. <b>Groups</b> on a set's line divides it into groups priced apart, for pieces with different stones. Ticks pick the lines for <b>Report or export</b>. Finished something by mistake? <b>Not finished</b> on its line sends it back to the bench in BenchClock.
     The time on each piece comes from BenchClock; press <kbd>F5</kbd> after finishing something there.</p>
 
   <footer>Pricing is saved as plain files in <button class="link" id="dataDir"></button>, beside your BenchClock time card.</footer>
@@ -111,6 +111,27 @@
       <span class="spacer"></span>
       <button type="button" id="groupsCancel">Cancel</button>
       <button type="submit" class="primary" id="groupsSave">Save groups</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="reportDlg">
+  <form method="dialog" id="reportForm">
+    <h2>Report or export</h2>
+    <div class="field-label">Which pieces?</div>
+    <div class="presets" id="reportScopes"></div>
+    <div class="field-label">Finished on which days? <span class="muted">- pick one of these, or set the dates yourself</span></div>
+    <div class="presets" id="reportPresets"></div>
+    <div class="dates">
+      <div><label for="repFrom">From</label><input type="date" id="repFrom"></div>
+      <div><label for="repTo">To</label><input type="date" id="repTo"></div>
+    </div>
+    <p class="hint gap" id="reportSummary"></p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button type="button" id="reportCancel">Cancel</button>
+      <button type="button" id="reportCsv" title="One row per set or single piece, for a spreadsheet">Save as CSV</button>
+      <button type="submit" class="primary" id="reportSave" title="A report laid out for reading and printing: each piece's hours, materials and prices">Save as PDF</button>
     </div>
   </form>
 </dialog>

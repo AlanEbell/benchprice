@@ -18,7 +18,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { METHODS, TROY_OUNCE_GRAMS, metalPerGram, tierFactor, roundTo, price, round4 } = require('./arithmetic.js');
+const { METHODS, TROY_OUNCE_GRAMS, metalPerGram, tierFactor, roundTo, price, round2, round4 } = require('./arithmetic.js');
 
 const APP_NAME = 'BenchClock'; // the data folder is BenchClock's
 const SCHEMA_VERSION = 1;
@@ -103,6 +103,66 @@ function labelItems(items) {
     });
   }
   return items;
+}
+
+// ----- what a report or price sheet covers -------------------------------------
+
+// Which lines a report or price sheet can be about.
+const SCOPES = { finished: 'Finished pieces', ticked: 'Ticked pieces', bench: 'Pieces on the bench', all: 'Every piece' };
+
+/** The days a report covers, checked: each of `from` and `to` is a 'YYYY-MM-DD' day or null. */
+function checkPeriod({ from, to } = {}) {
+  const clean = (value) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new PricingError(`Couldn't understand the date '${value}'.`);
+    return value;
+  };
+  const period = { from: clean(from), to: clean(to) };
+  if (period.from && period.to && period.from > period.to) throw new PricingError('The "from" date has to be on or before the "to" date.');
+  return period;
+}
+
+// BenchClock stores times as local time, so their first ten characters are the local day.
+const inPeriod = (iso, { from, to }) => !!iso && (!from || iso.slice(0, 10) >= from) && (!to || iso.slice(0, 10) <= to);
+
+/**
+ * The figures a confirmed price stands on, in the shape price() gives, so a report or price
+ * sheet shows the price as it was confirmed and not as today's spot prices and settings would
+ * make it. Prices confirmed before 1.5.0 were saved without the three methods' figures; those
+ * are worked out again from the saved inputs, with the method settings as they are now.
+ */
+function confirmedFigures(pricing, settings, overheadShare) {
+  const c = pricing.confirmed;
+  const byHand = c.method === 'by hand';
+  const metal = c.metal ? { ...c.metal } : null;
+  const stands = {
+    hours: c.hours, rate: c.rate, labor: c.labor, metal, weight_grams: c.weight_grams, metal_cost: c.metal_cost,
+    components: c.components, components_cost: c.components_cost, materials: c.materials, fees: c.fees,
+    by_hand: byHand, manual_price: byHand ? c.price : null, price: c.price, complete: true, confirmed: c, spot: c.spot,
+  };
+  if (c.methods) return { ...stands, methods: c.methods, method: c.chosen };
+  const then = {
+    ...settings, labor_rate: c.rate, spot: c.spot, fees: c.fees, round_to: c.round_to, round_mode: c.round_mode,
+    metals: metal ? [{ id: metal.id, name: metal.name, base: null, per_gram: metal.per_gram }] : [], // the premium is in the per-gram price
+  };
+  const again = price({ seconds_per_piece: c.hours * 3600 }, { metal: metal && metal.id, weight_grams: c.weight_grams, components: c.components,
+    method: byHand ? pricing.method : c.method }, then, c.overhead_share ?? overheadShare);
+  return { ...stands, methods: again.methods, method: again.method };
+}
+
+/** What some lines come to together: the headline figures of a report. A set counts every piece in it. */
+function totals(lines) {
+  const sum = (list, of) => list.reduce((n, g) => n + of(g), 0);
+  const priced = lines.filter((g) => g.basis.complete);
+  return {
+    lines: lines.length,
+    pieces: sum(lines, (g) => g.quantity),
+    seconds: sum(lines, (g) => sum(g.pieces, (i) => i.total_seconds || 0)), // all the time clocked on them
+    materials: round2(sum(lines, (g) => g.basis.materials * g.quantity)),
+    value: round2(sum(priced, (g) => g.basis.price * g.quantity)),
+    confirmed: lines.filter((g) => g.basis.confirmed).length,
+    unpriced: lines.length - priced.length,
+  };
 }
 
 // ----- the files -----------------------------------------------------------
@@ -355,6 +415,7 @@ class PriceBook {
       components: p.components.map((c) => ({ name: c.name, quantity: c.quantity, unit_cost: c.unit_cost, total: c.total })), components_cost: p.components_cost,
       materials: p.materials, method_price: p.by_hand ? p.methods[p.method].price : null,
       fees: p.fees, round_to: settings.round_to, round_mode: settings.round_mode || 'up', spot: { ...settings.spot },
+      methods: p.methods, chosen: p.method, // all three as they were, so a report can show them beside the price
     };
     const next = { ...this.getPricing(itemId), confirmed };
     writeJson(this.pricedPath(itemId), next);
@@ -372,7 +433,9 @@ class PriceBook {
    * the same. Finished sets only, unless `includeBench`; a set counts as finished once any
    * piece in it is, and then the ones still on the bench are listed but don't change the price.
    * A group of a divided set is a line like any other, timed and priced on its own pieces;
-   * `of_set` on a line says which set it belongs to and how that set is divided.
+   * `of_set` on a line says which set it belongs to and how that set is divided. `priced` is
+   * today's figures; `basis` is what the price stands on, the figures saved when it was
+   * confirmed, or today's while it is not.
    */
   listGroups({ includeBench = false } = {}) {
     const splits = this.splits();
@@ -418,6 +481,7 @@ class PriceBook {
       group.priced.live_price = group.priced.price;
       group.priced.moved = !!confirmed && confirmed.price !== group.priced.price;
       if (confirmed) group.priced.price = confirmed.price;
+      group.basis = confirmed ? confirmedFigures(pricing, settings, share) : { ...group.priced, spot: settings.spot };
       return group;
     });
     // Every line of a set knows the set's other lines, on the bench or not: the groups box asks before one is forgotten.
@@ -430,6 +494,22 @@ class PriceBook {
       .filter((g) => includeBench || g.finished > 0)
       .sort((a, b) => (b.finished > 0) - (a.finished > 0) || (b.finished_at || '').localeCompare(a.finished_at || '') ||
         a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'en', { numeric: true }) || a.label.localeCompare(b.label));
+  }
+
+  /**
+   * The lines a report or price sheet is about. `scope` picks them (`ids` are the ticked ones):
+   * a line counts as finished once any piece in it is, as on the list. `from`/`to` keep only
+   * the lines with a piece finished on those days, so nothing still on the bench.
+   */
+  chooseLines({ scope = 'finished', ids = [], from, to } = {}) {
+    if (!Object.hasOwn(SCOPES, scope)) throw new PricingError(`Unknown choice of pieces: ${scope}`);
+    const period = checkPeriod({ from, to });
+    if (!Array.isArray(ids)) ids = [];
+    const wanted = { finished: (g) => g.finished > 0, ticked: (g) => ids.includes(g.id), bench: (g) => !g.finished, all: () => true }[scope];
+    const ranged = period.from || period.to;
+    const lines = this.listGroups({ includeBench: scope !== 'finished' })
+      .filter((g) => wanted(g) && (!ranged || g.pieces.some((i) => inPeriod(i.finished_at, period))));
+    return { scope, period, lines };
   }
 
   /** A set's pricing is filed under its key; a set that was priced piece by piece before sets existed keeps its first piece's. */
@@ -482,16 +562,19 @@ class PriceBook {
     return next;
   }
 
-  /** Write a price sheet, one row per set or single piece, of these ids (every finished one when `ids` is empty). Returns the row count. */
+  /**
+   * Write a price sheet, one row per set or single piece, of these ids (every finished one when `ids` is empty).
+   * The figures are the ones the price stands on; `price_now` says what today's would make a confirmed price. Returns the row count.
+   */
   exportCsv(file, ids = []) {
     const wanted = new Set(ids);
     const groups = this.listGroups({ includeBench: wanted.size > 0 }).filter((g) => !wanted.size || wanted.has(g.id));
-    const rows = groups.map(({ priced: p, ...item }) => [
+    const rows = groups.map(({ basis: p, priced, ...item }) => [
       item.id, item.label, item.type, item.sku, item.status, item.finished_at || '', item.quantity, item.pieces.map((i) => i.id).join('; '), p.hours,
       p.metal ? p.metal.name : '', p.weight_grams, p.metal_cost, p.components.map((c) => `${c.quantity} x ${c.name} @ ${c.unit_cost}`).join('; '),
       p.components_cost, p.materials, p.labor, p.methods[1].price, p.methods[2].price, p.methods[3].price,
       p.confirmed ? p.confirmed.method : p.by_hand ? 'by hand' : p.method, p.price,
-      p.confirmed ? p.confirmed.at : '', p.confirmed ? p.live_price : '', item.pricing.notes,
+      p.confirmed ? p.confirmed.at : '', p.confirmed ? priced.live_price : '', item.pricing.notes,
     ]);
     const text = [CSV_FIELDS, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
     fs.writeFileSync(file, text, 'utf8');
@@ -500,6 +583,6 @@ class PriceBook {
 }
 
 module.exports = {
-  PriceBook, PricingError, price, metalPerGram, tierFactor, roundTo, labelItems, defaultDataDir,
-  DEFAULT_SETTINGS, METHODS, CSV_FIELDS, TROY_OUNCE_GRAMS, SCHEMA_VERSION,
+  PriceBook, PricingError, price, metalPerGram, tierFactor, roundTo, labelItems, defaultDataDir, checkPeriod, totals, confirmedFigures,
+  DEFAULT_SETTINGS, METHODS, SCOPES, CSV_FIELDS, TROY_OUNCE_GRAMS, SCHEMA_VERSION,
 };

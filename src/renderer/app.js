@@ -118,7 +118,6 @@ function render() {
   $('pieceCount').textContent = list.length ? `${pieces(count)}${count !== list.length ? ` in ${list.length} set${list.length === 1 ? '' : 's'} or single${list.length === 1 ? '' : 's'}` : ''}` : '';
   $('selCount').textContent = selected.size ? `${selected.size} ticked` : '';
   $('clearSel').hidden = !selected.size;
-  $('exportBtn').textContent = selected.size ? `Save price sheet (${selected.size})` : 'Save price sheet';
   $('dataDir').textContent = `${state.dataDir}/pricing`;
 }
 
@@ -558,14 +557,116 @@ function openHelp() {
 $('helpBtn').onclick = openHelp;
 $('helpClose').onclick = () => $('helpDlg').close();
 
-// ---- export, about, menu -----------------------------------------------
+// ---- price report -------------------------------------------------------
+// The same box as BenchClock's Report or export: which pieces, which days, then a PDF or a CSV.
 
-async function exportSheet() {
-  const ids = [...selected];
-  const result = await api('exportCsv', { ids });
-  if (result.file) toast(`Wrote ${result.count} row${result.count === 1 ? '' : 's'} to ${result.file}`);
+const REPORT_PRESETS = [['this-week', 'This week'], ['last-week', 'Last week'], ['this-month', 'This month'],
+  ['last-month', 'Last month'], ['this-year', 'This year'], ['all-time', 'All time']];
+const dayStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fmtDate = (day) => new Date(`${day}T12:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+/** The day weeks start on where this computer is set up for: 0 is Sunday, 1 Monday. */
+function weekStartsOn() {
+  try {
+    const locale = new Intl.Locale(navigator.language);
+    return (locale.getWeekInfo ? locale.getWeekInfo() : locale.weekInfo).firstDay % 7;
+  } catch { return 0; }
 }
-$('exportBtn').onclick = exportSheet;
+
+function presetDates(id) {
+  const today = new Date();
+  const [y, m, d] = [today.getFullYear(), today.getMonth(), today.getDate()];
+  const week = d - (today.getDay() - weekStartsOn() + 7) % 7; // day of the month this week began; Date copes with 0 and below
+  const span = (from, to) => ({ from: dayStr(from), to: dayStr(to) });
+  if (id === 'this-week') return span(new Date(y, m, week), new Date(y, m, week + 6));
+  if (id === 'last-week') return span(new Date(y, m, week - 7), new Date(y, m, week - 1));
+  if (id === 'this-month') return span(new Date(y, m, 1), new Date(y, m + 1, 0));
+  if (id === 'last-month') return span(new Date(y, m - 1, 1), new Date(y, m, 0));
+  if (id === 'this-year') return span(new Date(y, 0, 1), new Date(y, 11, 31));
+  return { from: '', to: '' };
+}
+
+// The days are remembered as "last week", not as dates, so next week it means next week's last week.
+const remembered = (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
+const remember = (key, value) => { try { localStorage.setItem(key, value); } catch { /* a nicety, not a need */ } };
+let reportPreset = remembered('reportPreset', 'all-time'); // null while the dates are the user's own
+let reportScope = remembered('reportScope', 'finished');
+const REPORT_SCOPES = [['finished', 'Finished'], ['ticked', 'Ticked'], ['bench', 'On the bench'], ['all', 'Everything']];
+
+const reportChoice = () => ({ scope: reportScope, ids: [...selected], from: $('repFrom').value, to: $('repTo').value });
+
+async function updateReport() {
+  const { from, to } = reportChoice();
+  const match = REPORT_PRESETS.find(([id]) => presetDates(id).from === from && presetDates(id).to === to);
+  reportPreset = match ? match[0] : null;
+  for (const button of $('reportPresets').children) button.setAttribute('aria-pressed', button.dataset.preset === reportPreset);
+  for (const button of $('reportScopes').children) {
+    const id = button.dataset.scope;
+    button.setAttribute('aria-pressed', id === reportScope);
+    if (id === 'ticked') {
+      button.disabled = !selected.size;
+      button.textContent = selected.size ? `Ticked (${selected.size})` : 'Ticked';
+      button.title = selected.size ? '' : 'Tick lines on the list first, then come back here';
+    }
+  }
+  const ranged = !!from || !!to;
+  const days = from && to ? (from === to ? `Finished on ${fmtDate(from)}` : `Finished ${fmtDate(from)} to ${fmtDate(to)}`) :
+    from ? `Finished since ${fmtDate(from)}` : to ? `Finished up to ${fmtDate(to)}` : 'All time';
+  const backwards = !!from && !!to && from > to;
+  let text = '"From" has to be on or before "To".';
+  let empty = false;
+  if (!backwards) {
+    const found = await api('exportPreview', reportChoice());
+    empty = !found.lines;
+    text = empty ? `${days}: nothing to report.${ranged ? ' A line is left out unless a piece of it was finished on these days, so nothing still on the bench is here.' : ''}` :
+      `${days}: ${pieces(found.pieces)}${found.pieces !== found.lines ? ` in ${found.lines} set${found.lines === 1 ? '' : 's or singles'}` : ''},
+       ${fmtDur(found.seconds)} of making, ${money(found.materials)} of materials, ${money0(found.value)} at their prices${
+        found.unpriced ? `; ${found.unpriced} not priced yet` : ''}.`;
+  }
+  $('reportSummary').textContent = text.replace(/\s+/g, ' ');
+  $('reportSave').disabled = $('reportCsv').disabled = backwards || empty;
+}
+
+function openReport() {
+  if (reportPreset) ({ from: $('repFrom').value, to: $('repTo').value } = presetDates(reportPreset)); // else: the dates typed last time
+  // Lines ticked on the list are most likely what the report is wanted for.
+  if (selected.size) reportScope = 'ticked';
+  else if (reportScope === 'ticked') reportScope = 'finished';
+  $('reportDlg').showModal();
+  updateReport();
+}
+
+$('reportScopes').innerHTML = REPORT_SCOPES.map(([id, label]) => `<button type="button" data-scope="${id}" aria-pressed="false">${label}</button>`).join('');
+$('reportPresets').innerHTML = REPORT_PRESETS.map(([id, label]) => `<button type="button" data-preset="${id}" aria-pressed="false">${label}</button>`).join('');
+$('reportScopes').onclick = (ev) => {
+  if (!ev.target.dataset.scope) return;
+  reportScope = ev.target.dataset.scope;
+  updateReport();
+};
+$('reportPresets').onclick = (ev) => {
+  if (!ev.target.dataset.preset) return;
+  ({ from: $('repFrom').value, to: $('repTo').value } = presetDates(ev.target.dataset.preset));
+  updateReport();
+};
+$('repFrom').oninput = $('repTo').oninput = updateReport;
+$('reportBtn').onclick = openReport;
+$('reportCancel').onclick = () => $('reportDlg').close();
+
+async function saveReport(method) {
+  $('reportSave').disabled = $('reportCsv').disabled = true;
+  try {
+    const result = await api(method, reportChoice());
+    if (!result.file) return; // backed out of choosing where to save: the choices are still there to change
+    remember('reportPreset', reportPreset || '');
+    if (reportScope !== 'ticked') remember('reportScope', reportScope);
+    $('reportDlg').close();
+    toast(method === 'exportCsv' ? `Wrote ${result.count} row${result.count === 1 ? '' : 's'} to ${result.file}` : `Saved the report to ${result.file}`);
+  } finally { if ($('reportDlg').open) updateReport(); }
+}
+$('reportForm').addEventListener('submit', (ev) => { ev.preventDefault(); saveReport('exportReport'); });
+$('reportCsv').onclick = () => saveReport('exportCsv');
+
+// ---- about, menu --------------------------------------------------------
 
 function openAbout() {
   $('aboutVersion').textContent = `Version ${state.app.version}`;
@@ -575,7 +676,7 @@ function openAbout() {
 }
 $('aboutClose').onclick = () => $('aboutDlg').close();
 
-const menuActions = { settings: openSettings, export: exportSheet, about: openAbout, help: openHelp, reload: () => api('state') };
+const menuActions = { settings: openSettings, report: openReport, about: openAbout, help: openHelp, reload: () => api('state') };
 window.pricebook.onMenu((action) => {
   if (document.querySelector('dialog[open]')) return; // one thing at a time
   menuActions[action]();

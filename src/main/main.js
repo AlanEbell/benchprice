@@ -1,9 +1,11 @@
 'use strict';
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, net, protocol, shell } = require('electron');
 
-const { PriceBook, PricingError, METHODS } = require('../core/pricing.js');
+const { PriceBook, PricingError, METHODS, totals } = require('../core/pricing.js');
+const { buildReportHtml, coversLabel } = require('./report.js');
 const spot = require('../core/spot.js');
 const { version, homepage } = require('../../package.json');
 
@@ -30,6 +32,39 @@ function buildState({ includeBench = false } = {}) {
 
 let includeBench = false; // remembered for the state sent back after every call
 
+/** For the names of saved files: "ticked from 2026-09-07 to 2026-09-13", or today's date when there is nothing to say. */
+function fileWords({ scope, period }) {
+  const words = [scope !== 'finished' && scope, period.from && `from ${period.from}`, period.to && `to ${period.to}`].filter(Boolean);
+  const today = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return words.length ? words.join(' ') : `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+}
+
+/** Lay the report out in a hidden window and print that to a PDF file. `choice` is what chooseLines takes; leave it out for every finished piece. */
+async function writeReportPdf(file, choice = {}) {
+  const { scope, period, lines } = book.chooseLines(choice);
+  const settings = book.settings();
+  const html = buildReportHtml({ lines, settings, overheadShare: book.overheadShare(settings), scope, period, photosDir: book.photosDir });
+  const page = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'benchprice-report-')), 'report.html');
+  fs.writeFileSync(page, html, 'utf8');
+  const printer = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+  try {
+    await printer.loadFile(page);
+    const letter = ['US', 'CA', 'MX'].includes(app.getLocaleCountryCode());
+    const small = 'font-size:8px; color:#776d62; width:100%; padding:0 14mm;';
+    fs.writeFileSync(file, await printer.webContents.printToPDF({
+      pageSize: letter ? 'Letter' : 'A4', printBackground: true,
+      margins: { top: 0.6, bottom: 0.7, left: 0.55, right: 0.55 }, // inches
+      displayHeaderFooter: true, headerTemplate: '<span></span>',
+      footerTemplate: `<div style="${small} display:flex; justify-content:space-between;"><span>BenchPrice price report \u00b7 ${coversLabel(scope, period)}</span>` +
+        '<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>',
+    }));
+  } finally {
+    printer.destroy();
+    fs.rmSync(path.dirname(page), { recursive: true, force: true });
+  }
+}
+
 const api = {
   state: ({ includeBench: wanted } = {}) => { if (wanted !== undefined) includeBench = !!wanted; return null; },
   saveSettings: (changes) => book.saveSettings(changes),
@@ -46,14 +81,29 @@ const api = {
     return live;
   },
 
-  async exportCsv({ ids = [] } = {}) {
+  /** What the choices in the report box come to, before anything is saved. */
+  exportPreview: (choice) => totals(book.chooseLines(choice).lines),
+
+  async exportCsv(choice) {
+    const chosen = book.chooseLines(choice);
+    if (!chosen.lines.length) throw new PricingError('Nothing to export.');
     const picked = await dialog.showSaveDialog(mainWindow, {
-      title: 'Save price sheet',
-      defaultPath: path.join(app.getPath('documents'), `BenchPrice ${new Date().toISOString().slice(0, 10)}.csv`),
+      title: 'Export CSV', defaultPath: path.join(app.getPath('documents'), `BenchPrice ${fileWords(chosen)}.csv`),
       filters: [{ name: 'CSV file', extensions: ['csv'] }],
     });
     if (picked.canceled) return { file: null };
-    return { file: picked.filePath, count: book.exportCsv(picked.filePath, ids) };
+    return { file: picked.filePath, count: book.exportCsv(picked.filePath, chosen.lines.map((g) => g.id)) };
+  },
+
+  async exportReport(choice) {
+    const picked = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save price report', defaultPath: path.join(app.getPath('documents'), `BenchPrice report ${fileWords(book.chooseLines(choice))}.pdf`),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (picked.canceled) return { file: null };
+    await writeReportPdf(picked.filePath, choice);
+    shell.openPath(picked.filePath); // show it straight away in the computer's PDF viewer
+    return { file: picked.filePath };
   },
 
   openDataFolder: () => { shell.openPath(book.pricingDir); },
@@ -92,7 +142,7 @@ function buildMenu() {
       label: '&File',
       submenu: [
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: toPage('settings') },
-        { label: 'Save price sheet…', accelerator: 'CmdOrCtrl+S', click: toPage('export') },
+        { label: 'Report or export…', accelerator: 'CmdOrCtrl+P', click: toPage('report') },
         line,
         { label: 'Open the pricing folder', click: () => { shell.openPath(book.pricingDir); } },
         ...(mac ? [] : [line, { role: 'quit' }]),
@@ -146,3 +196,5 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on('window-all-closed', () => app.quit());
 }
+
+module.exports = { writeReportPdf }; // for scripts/smoke.js

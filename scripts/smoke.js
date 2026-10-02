@@ -28,7 +28,10 @@ const items = [
 ];
 for (const it of items) fs.writeFileSync(path.join(dataDir, 'items', `${it.id}.json`), JSON.stringify(it, null, 2));
 
+let started = false;
 app.on('browser-window-created', (event, win) => {
+  if (started) return; // only the app's own window; the report printer comes later
+  started = true;
   win.webContents.once('did-finish-load', async () => {
     const run = (js) => win.webContents.executeJavaScript(`(async () => { ${js} })()`, true);
     const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -145,11 +148,36 @@ app.on('browser-window-created', (event, win) => {
       assert.match(await run("return document.querySelector('#pieces .row[data-id=batch-1] .prices .chosen small').textContent"), /Confirmed, now/, 'the confirmed price holds');
       assert.match(await run("return document.querySelector('#pieces .row[data-id=hoops] .prices').textContent"), /no weight or materials yet/);
 
-      // the bench, ticks, and the price sheet
+      // the bench, ticks, and the report box: which pieces, which days, then a CSV or a PDF
       await run("$('showBench').checked = true; $('showBench').onchange(); await new Promise((r) => setTimeout(r, 300));");
       assert.equal(await run("return document.querySelectorAll('#pieces .row').length"), 3);
       await run("document.querySelector('#pieces .row[data-id=pendant] input').click(); document.querySelector('#pieces .row[data-id=batch-1] input').click();");
-      assert.equal(await run("return $('exportBtn').textContent"), 'Save price sheet (2)');
+      await run("$('reportBtn').click(); await new Promise((r) => setTimeout(r, 300));");
+      assert.deepEqual(await run("const ticked = document.querySelector('[data-scope=ticked]'); return [$('reportDlg').open, ticked.textContent, ticked.getAttribute('aria-pressed')]"),
+        [true, 'Ticked (2)', 'true'], 'ticked lines are what the report is most likely wanted for');
+      assert.match(await run("return $('reportSummary').textContent"), /^All time: 3 pieces in 2 sets or singles, 5h 45m of making, \$[\d.]+ of materials, \$[\d,]+ at their prices; 1 not priced yet\.$/);
+      await shot('5a-report-box');
+      await run("document.querySelector('[data-scope=finished]').click(); await new Promise((r) => setTimeout(r, 300));");
+      assert.match(await run("return $('reportSummary').textContent"), /^All time: 6 pieces in 2 sets or singles, 6h 15m of making/);
+      await run("$('repFrom').value = '2026-09-11'; $('repTo').value = '2026-09-12'; await updateReport();");
+      assert.match(await run("return $('reportSummary').textContent"), /^Finished Fri, Sep 11, 2026 to Sat, Sep 12, 2026: 2 pieces in 1 set, 4h 15m of making/);
+      await run("document.querySelector('[data-scope=bench]').click(); await new Promise((r) => setTimeout(r, 300));");
+      assert.match(await run("return $('reportSummary').textContent"), /nothing to report\. A line is left out unless a piece of it was finished on these days/);
+      assert.equal(await run("return $('reportSave').disabled && $('reportCsv').disabled"), true);
+      await run("$('repFrom').value = '2026-09-13'; await updateReport();");
+      assert.match(await run("return $('reportSummary').textContent"), /on or before/);
+      await run("document.querySelector('[data-preset=all-time]').click(); await new Promise((r) => setTimeout(r, 300));");
+      assert.match(await run("return $('reportSummary').textContent"), /^All time: 1 piece, 1h 30m of making/);
+      await run("$('reportDlg').close();");
+      assert.match(await run("try { await api('exportPreview', { from: 'soon' }); return 'accepted' } catch (e) { return e.message }"), /Couldn't understand the date/);
+      const ticked = await run('return [...selected]');
+      for (const [name, choice] of [['finished', {}], ['ticked', { scope: 'ticked', ids: ticked }], ['all', { scope: 'all' }], ['days', { from: '2026-09-11', to: '2026-09-12' }], ['none', { scope: 'bench', to: '2026-09-30' }]]) {
+        const file = path.join(dataDir, `report-${name}.pdf`);
+        await writeReportPdf(file, choice);
+        const bytes = fs.readFileSync(file);
+        assert.equal(bytes.subarray(0, 5).toString(), '%PDF-', `${name} report`);
+        assert.ok(bytes.length > 5000, `the ${name} report has content`);
+      }
       const { PriceBook } = require('../src/core/pricing.js');
       const csv = path.join(dataDir, 'sheet.csv');
       assert.equal(new PriceBook(dataDir).exportCsv(csv, await run('return [...selected]')), 2);
@@ -192,7 +220,7 @@ app.on('browser-window-created', (event, win) => {
       assert.equal(fs.existsSync(pricedFile('batch-1')), false, "the set's own line is gone");
       const groupA = JSON.parse(fs.readFileSync(pricedFile('batch-1-A'), 'utf8'));
       assert.deepEqual([groupA.metal, groupA.weight_grams, groupA.components[0].name, groupA.confirmed], ['sterling', 4.2, 'Moonstone', null]);
-      assert.equal(await run("return $('exportBtn').textContent"), 'Save price sheet (1)', 'the tick on the set went with it');
+      assert.equal(await run("return $('selCount').textContent"), '1 ticked', 'the tick on the set went with it');
       await run("document.querySelector('#pieces .row[data-id=batch-1-B] [data-act=price]').click();");
       assert.match(await run("return $('pieceHint').textContent"), /^Group B, piece 2 of the set, priced apart from the others\. 1h 45m of making time/);
       await run("$('pWeight').value = '6'; updatePiece(); $('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400));");
@@ -225,8 +253,14 @@ app.on('browser-window-created', (event, win) => {
       await pause(300);
       assert.equal(await run("return $('aboutDlg').open"), true);
       win.webContents.send('menu', 'settings');
+      win.webContents.send('menu', 'report');
       await pause(200);
-      assert.equal(await run("return $('settingsDlg').open"), false);
+      assert.equal(await run("return $('settingsDlg').open || $('reportDlg').open"), false);
+      await run("$('aboutClose').click()");
+      win.webContents.send('menu', 'report');
+      await pause(300);
+      assert.equal(await run("return $('reportDlg').open"), true);
+      await run("$('reportDlg').close()");
       // spot prices at startup, as Settings now says: a failure leaves the saved ones, then the window is opened afresh and they are fetched
       const savedSettings = () => JSON.parse(fs.readFileSync(path.join(dataDir, 'pricing', 'settings.json'), 'utf8'));
       spotDown = true;
@@ -254,4 +288,4 @@ spot.fetchSpot = async () => {
   if (spotDown) throw new PricingError("Couldn't reach gold-api.com for the spot prices. Is this computer online?");
   return { spot: { silver: 61.1, gold: 4179.1, platinum: 1719 }, source: 'gold-api.com', at: '2026-10-01T20:00:53.000Z' };
 };
-require('../src/main/main.js');
+const { writeReportPdf } = require('../src/main/main.js');
