@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, net, protocol, shell } = require('electron');
 
-const { PriceBook, PricingError, METHODS, totals } = require('../core/pricing.js');
+const { PriceBook, PricingError, METHODS, PIECE_TYPES, totals } = require('../core/pricing.js');
 const { buildReportHtml, coversLabel } = require('./report.js');
 const spot = require('../core/spot.js');
 const { version, homepage } = require('../../package.json');
@@ -25,6 +25,7 @@ function buildState({ includeBench = false } = {}) {
     overheadShare: book.overheadShare(settings),
     groups: book.listGroups({ includeBench }),
     methods: METHODS,
+    pieceTypes: PIECE_TYPES,
     dataDir: book.dataDir,
     app: { version, electron: process.versions.electron },
   };
@@ -72,6 +73,7 @@ const api = {
   confirmPrice: ({ id, ...changes }) => book.confirmPrice(id, changes),
   clearPricing: ({ id }) => book.clearPricing(id),
   sendBack: ({ ids }) => book.sendBack(ids),
+  addPiece: (piece) => book.addPiece(piece),
   setGroups: ({ id, letters }) => book.setGroups(id, letters),
   fetchSpot: () => spot.fetchSpot({ fetch: net.fetch }), // Electron's fetch follows the system's proxy
   /** Fetched and saved in one go, as the app starts when Settings says to. */

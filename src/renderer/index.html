@@ -27,6 +27,7 @@
     <span id="selCount" class="muted"></span>
     <button id="clearSel" class="quiet" hidden>Untick all</button>
     <label class="check"><input type="checkbox" id="showBench"> Show the bench too</label>
+    <button id="addBtn" title="Old stock, or something made without the clock running: add it here already finished, with the hours it took">Add a piece</button>
   </div>
   <div class="list" id="pieces"></div>
   <p class="muted tip">Press <b>Price</b> on a line to enter its metal, weight, stones and findings, then <b>Confirm price</b> to write the price into the piece's file; it holds until you confirm again. Pieces added together in BenchClock are one set and carry one price; custom pieces are priced alone. <b>Groups</b> on a set's line divides it into groups priced apart, for pieces with different stones. Ticks pick the lines for <b>Report or export</b>. Finished something by mistake? <b>Not finished</b> on its line sends it back to the bench in BenchClock.
@@ -84,6 +85,52 @@
       <button type="button" id="pieceCancel">Cancel</button>
       <button type="submit" id="pieceSave" title="Keep what was entered without confirming a price">Save</button>
       <button type="button" class="primary" id="pieceConfirm" title="Write this price into the piece's file. It stays until you confirm again or clear it.">Confirm price</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="addDlg">
+  <form method="dialog" id="addForm" autocomplete="off">
+    <h2>Add a finished piece</h2>
+    <p class="hint">For old stock, or work the clock was never started for. It goes on the list as finished, and into BenchClock too, with the hours you give here in place of clocked time.</p>
+    <div class="two">
+      <div>
+        <label for="aName">Name</label>
+        <input type="text" id="aName" placeholder="e.g. Moonstone ring" required>
+      </div>
+      <div>
+        <label for="aType">Kind of piece</label>
+        <select id="aType"></select>
+      </div>
+    </div>
+    <div class="three">
+      <div>
+        <label for="aQuantity">How many <span class="muted">- alike, one price</span></label>
+        <input type="number" id="aQuantity" min="1" max="999" step="1" value="1" required>
+      </div>
+      <div>
+        <label for="aHours">Hours of making <span class="muted">- per piece</span></label>
+        <div class="unit-field"><input type="number" id="aHours" min="0" step="any" placeholder="0"><span class="unit">h</span></div>
+      </div>
+      <div>
+        <label for="aFinished">Finished on</label>
+        <input type="date" id="aFinished">
+      </div>
+    </div>
+    <div class="two">
+      <div>
+        <label for="aSku">SKU <span class="muted">- if it has one</span></label>
+        <input type="text" id="aSku">
+      </div>
+      <div>
+        <label for="aNotes">Notes</label>
+        <input type="text" id="aNotes">
+      </div>
+    </div>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button type="button" id="addCancel">Cancel</button>
+      <button type="submit" class="primary" id="addSave" title="Add it, then enter its metal, weight and price">Add and price it</button>
     </div>
   </form>
 </dialog>

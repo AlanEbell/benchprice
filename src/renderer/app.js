@@ -152,6 +152,30 @@ function ask(title, text, yesLabel) {
   });
 }
 
+// ---- adding a piece that never went through BenchClock -----------------
+
+function openAdd() {
+  $('addForm').reset();
+  $('aType').innerHTML = state.pieceTypes.map((t) => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');
+  $('aType').value = 'other';
+  $('aFinished').value = dayStr(new Date());
+  $('aFinished').max = dayStr(new Date());
+  $('addDlg').showModal();
+  $('aName').focus();
+}
+$('addBtn').onclick = openAdd;
+$('addCancel').onclick = () => $('addDlg').close();
+$('addForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const added = await api('addPiece', {
+    name: $('aName').value, type: $('aType').value, quantity: $('aQuantity').value, hours: $('aHours').value,
+    finished_on: $('aFinished').value, sku: $('aSku').value, notes: $('aNotes').value,
+  });
+  $('addDlg').close();
+  const line = findPiece(added.id);
+  if (line) openPiece(line); // straight on to its metal, weight and price
+});
+
 // ---- sending a piece back to the bench ---------------------------------
 
 let returning = null; // the set in the box

@@ -359,3 +359,61 @@ test('a piece with no time on it goes back as not started', () => {
   book.sendBack(['cuff-1']);
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).status, 'not_started');
 });
+
+test('a piece made without the clock is added finished, as BenchClock would write it', () => {
+  const added = book.addPiece({ name: ' Old stock ring ', type: 'ring', hours: 1.5, finished_on: '2026-03-02', sku: 'R-9', notes: 'from the case' });
+  assert.equal(added.items.length, 1);
+  assert.equal(added.id, added.items[0].id); // one piece is priced under its own id
+  const file = JSON.parse(fs.readFileSync(path.join(dir, 'items', `${added.id}.json`), 'utf8'));
+  assert.match(file.id, /^old-stock-ring-[0-9a-f]{8}$/);
+  assert.deepEqual([file.name, file.type, file.sku, file.notes, file.status, file.batch_id, file.quantity, file.origin],
+    ['Old stock ring', 'ring', 'R-9', 'from the case', 'finished', null, 1, 'benchprice']);
+  assert.equal(file.sequence, 4); // after BenchClock's own three
+  assert.match(file.finished_at, /^2026-03-02T12:00:00[+-]\d\d:\d\d$/);
+  assert.equal(file.started_at, file.finished_at);
+  assert.deepEqual([file.total_seconds, file.seconds_per_piece], [5400, 5400]);
+  const [entry] = file.time_entries;
+  assert.deepEqual([entry.kind, entry.percent, entry.seconds, entry.clock_in, entry.clock_out], ['adjustment', 100, 5400, file.finished_at, file.finished_at]);
+  assert.match(entry.session_id, /^adjust-[0-9a-f]{8}$/);
+
+  // it is on the finished list and prices like any other piece: 1.5 h at $50
+  const line = book.listGroups().find((g) => g.id === added.id);
+  assert.deepEqual([line.status, line.quantity, line.priced.hours, line.priced.labor], ['finished', 1, 1.5, 75]);
+  book.confirmPrice(added.id, { metal: 'sterling', weight_grams: 6 });
+  assert.ok(book.listGroups().find((g) => g.id === added.id).pricing.confirmed.price > 0);
+  // and it can go back to the bench like one of BenchClock's own
+  assert.deepEqual(book.sendBack([added.id]), [{ id: added.id, name: 'Old stock ring' }]);
+});
+
+test('several added together are a set with one price, each with the hours given', () => {
+  const added = book.addPiece({ name: 'Studs', type: 'earrings', quantity: 3, hours: 0.5 });
+  assert.match(added.id, /^batch-[0-9a-f]{8}$/);
+  assert.equal(added.items.length, 3);
+  const files = added.items.map((i) => JSON.parse(fs.readFileSync(path.join(dir, 'items', `${i.id}.json`), 'utf8')));
+  assert.deepEqual(files.map((f) => [f.batch_id, f.quantity, f.total_seconds, f.sequence]), [[added.id, 1, 1800, 4], [added.id, 1, 1800, 5], [added.id, 1, 1800, 6]]);
+  assert.equal(new Set(files.map((f) => f.time_entries[0].session_id)).size, 1); // one entry of time, on each
+  assert.equal(files[0].finished_at.slice(0, 10), new Date().toLocaleDateString('sv')); // today, when no day is given
+  const line = book.listGroups().find((g) => g.id === added.id);
+  assert.deepEqual([line.set, line.quantity, line.finished, line.seconds_per_piece, line.label], [true, 3, 3, 1800, 'Studs']);
+});
+
+test('a piece can be added with no time, and bad entries add nothing', () => {
+  const added = book.addPiece({ name: 'Found in a drawer' });
+  const file = JSON.parse(fs.readFileSync(path.join(dir, 'items', `${added.id}.json`), 'utf8'));
+  assert.deepEqual([file.time_entries, file.total_seconds, file.started_at, file.status], [[], 0, null, 'finished']);
+  const before = fs.readdirSync(path.join(dir, 'items')).length;
+  for (const bad of [{}, { name: '  ' }, { name: 'x', quantity: 0 }, { name: 'x', quantity: 1.5 }, { name: 'x', type: 'overhead' }, { name: 'x', hours: -1 },
+    { name: 'x', hours: 'lots' }, { name: 'x', finished_on: 'yesterday' }, { name: 'x', finished_on: '2999-01-01' }]) {
+    assert.throws(() => book.addPiece(bad), PricingError);
+  }
+  assert.equal(fs.readdirSync(path.join(dir, 'items')).length, before);
+});
+
+test('a piece can be added before BenchClock has ever run', () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'benchprice-'));
+  try {
+    const alone = new PriceBook(empty);
+    const added = alone.addPiece({ name: 'First', hours: 1 });
+    assert.deepEqual(alone.listGroups().map((g) => g.id), [added.id]);
+  } finally { fs.rmSync(empty, { recursive: true, force: true }); }
+});

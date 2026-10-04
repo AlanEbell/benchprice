@@ -274,6 +274,26 @@ app.on('browser-window-created', (event, win) => {
       assert.equal(await run("return $('toast').textContent"), 'Spot prices from gold-api.com: $61.10 silver, $4,179.10 gold, $1,719.00 platinum.');
       assert.match(await run("return $('strip').textContent"), /\$61\.10 silver, \$4,179\.10 gold, \$1,719 platinum per troy oz, from gold-api\.com /);
       await shot('9-auto-spot');
+      // a piece made without the clock: added finished, into BenchClock's folder, then straight on to its price
+      const filesBefore = fs.readdirSync(path.join(dataDir, 'items')).length;
+      await run("$('addBtn').click(); await new Promise((r) => setTimeout(r, 200));");
+      assert.deepEqual(await run("return [$('addDlg').open, $('aType').value, $('aQuantity').value, $('aFinished').value === dayStr(new Date())]"), [true, 'other', '1', true]);
+      await run("$('aName').value = 'Old stock studs'; $('aType').value = 'earrings'; $('aQuantity').value = '2'; $('aHours').value = '0.75'; $('aNotes').value = 'from the case';");
+      await shot('10-add-piece');
+      await run("$('addSave').click(); await new Promise((r) => setTimeout(r, 500));");
+      assert.deepEqual(await run("return [$('addDlg').open, $('pieceDlg').open, $('pieceTitle').textContent.includes('Old stock studs')]"), [false, true, true]);
+      const addedFiles = fs.readdirSync(path.join(dataDir, 'items')).filter((f) => f.startsWith('old-stock-studs-')).map((f) => JSON.parse(fs.readFileSync(path.join(dataDir, 'items', f), 'utf8')));
+      assert.equal(fs.readdirSync(path.join(dataDir, 'items')).length, filesBefore + 2);
+      assert.deepEqual(addedFiles.map((f) => [f.status, f.type, f.total_seconds, f.origin, f.time_entries[0].kind, f.batch_id === addedFiles[0].batch_id]),
+        [['finished', 'earrings', 2700, 'benchprice', 'adjustment', true], ['finished', 'earrings', 2700, 'benchprice', 'adjustment', true]]);
+      await run("$('pMetal').value = 'sterling'; $('pWeight').value = '1.8'; updatePiece(); $('pieceConfirm').click(); await new Promise((r) => setTimeout(r, 400));");
+      const addedRow = `#pieces .row[data-id=${addedFiles[0].batch_id}]`;
+      assert.match(await run(`return document.querySelector('${addedRow} .meta').textContent`), /0h 45m each · a set, one price/);
+      assert.match(await run(`return document.querySelector('${addedRow} .prices .chosen').textContent`), /^Confirmed\$/);
+      await shot('11-added-priced');
+      // a bad entry says why and adds nothing
+      assert.match(await run("try { await api('addPiece', { name: '' }); return 'accepted' } catch (e) { return e.message }"), /A piece needs a name/);
+
       console.log('SMOKE OK');
     } catch (error) {
       console.error('SMOKE FAILED\n', error);

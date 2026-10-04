@@ -3,9 +3,10 @@
  * BenchPrice: the pricing arithmetic and the files behind it. No interface here.
  *
  * BenchClock's data folder is read: pieces and their time come from items/<id>.json.
- * The one thing written there is a piece sent back to the bench (see sendBack), which
- * does what BenchClock's own Reopen does. Everything BenchPrice adds lives in its own
- * folder inside it:
+ * Two things are written there, each as BenchClock itself would write it: a piece sent
+ * back to the bench (see sendBack), which does what BenchClock's own Reopen does, and a
+ * piece made without the clock (see addPiece), added already finished with its time put
+ * on by hand. Everything else BenchPrice adds lives in its own folder inside it:
  *
  *   <data dir>/pricing/settings.json     labor rate, spot prices, metals, the three methods
  *   <data dir>/pricing/items/<id>.json   weight, metal, stones and findings for one piece
@@ -14,6 +15,7 @@
  * So BenchClock never sees a file it doesn't expect, and one backup of the folder keeps both.
  */
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -23,6 +25,16 @@ const { METHODS, TROY_OUNCE_GRAMS, metalPerGram, tierFactor, roundTo, price, rou
 const APP_NAME = 'BenchClock'; // the data folder is BenchClock's
 const SCHEMA_VERSION = 1;
 const OVERHEAD_ID = 'time-overhead';
+
+// BenchClock's kinds of piece, for a piece added here.
+const PIECE_TYPES = [
+  { id: 'earrings', label: 'Earrings' }, { id: 'ring', label: 'Ring' }, { id: 'pendant', label: 'Pendant' },
+  { id: 'chain', label: 'Chain' }, { id: 'bracelet', label: 'Bracelet' }, { id: 'cuff', label: 'Cuff / bangle' },
+  { id: 'brooch', label: 'Brooch' }, { id: 'custom', label: 'Custom' }, { id: 'other', label: 'Other' },
+];
+const ADDED_HERE = 'benchprice'; // `origin` on a piece added here and not in BenchClock
+const ADDED_NOTE = 'Made without the clock; time entered in BenchPrice';
+const MAX_HOURS = 10000;
 
 /**
  * Starting settings. Spot prices are a placeholder: they move every day and are yours to
@@ -70,6 +82,17 @@ function defaultDataDir() {
   else base = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
   return path.join(base, APP_NAME);
 }
+
+/** Local time with its UTC offset, to the second, as BenchClock writes it: 2026-09-17T14:05:00-04:00 */
+function toIso(date) {
+  const p = (n) => String(Math.trunc(Math.abs(n))).padStart(2, '0');
+  const offset = -date.getTimezoneOffset();
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}` +
+    `T${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}` +
+    `${offset < 0 ? '-' : '+'}${p(offset / 60)}:${p(offset % 60)}`;
+}
+
+const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'piece';
 
 function writeJson(file, data) {
   const tmp = `${file}.tmp`;
@@ -316,6 +339,51 @@ class PriceBook {
       writeJson(file, item);
     }
     return back.map(([, item]) => ({ id: item.id, name: item.name }));
+  }
+
+  /**
+   * Add pieces that never went through BenchClock (old stock, or work the clock was never
+   * started for), already finished. They are written as BenchClock writes its own: `quantity`
+   * separate pieces sharing a `batch_id`, so they are one line with one price, each carrying
+   * `hours` of making as time put on by hand. `finished_on` is the 'YYYY-MM-DD' day they were
+   * finished (today when left out), and the day reports count their time on. `origin` on each
+   * file says it was added here. Returns the id of the line to price, and the pieces.
+   */
+  addPiece({ name, quantity = 1, type = 'other', sku = '', notes = '', hours = 0, finished_on } = {}) {
+    name = String(name ?? '').trim();
+    if (!name) throw new PricingError('A piece needs a name.');
+    quantity = num(quantity, 'How many', { min: 1, max: 999, integer: true });
+    if (!PIECE_TYPES.some((t) => t.id === type)) throw new PricingError(`Unknown kind of piece: ${type}`);
+    hours = hours === '' || hours === null || hours === undefined ? 0 : num(hours, 'Hours of making', { min: 0, max: MAX_HOURS });
+    const now = new Date();
+    let finished = now;
+    if (finished_on !== undefined && finished_on !== null && finished_on !== '') {
+      const day = checkPeriod({ from: finished_on }).from;
+      if (day > toIso(now).slice(0, 10)) throw new PricingError("The day it was finished can't be in the future.");
+      if (day !== toIso(now).slice(0, 10)) finished = new Date(`${day}T12:00:00`);
+      if (Number.isNaN(finished.getTime())) throw new PricingError(`Couldn't understand the date '${finished_on}'.`);
+    }
+    const stamp = toIso(finished);
+    const seconds = Math.round(hours * 36000) / 10;
+    const entry = seconds > 0 ? {
+      session_id: `adjust-${crypto.randomBytes(4).toString('hex')}`, kind: 'adjustment', clock_in: stamp, clock_out: stamp,
+      percent: 100, seconds, note: ADDED_NOTE,
+    } : null;
+    const batchId = quantity > 1 ? `batch-${crypto.randomBytes(4).toString('hex')}` : null;
+    fs.mkdirSync(this.itemsDir, { recursive: true });
+    let sequence = Math.max(0, ...fs.readdirSync(this.itemsDir).filter((file) => file.endsWith('.json'))
+      .map((file) => readJson(path.join(this.itemsDir, file)).sequence || 0));
+    const items = Array.from({ length: quantity }, () => {
+      sequence += 1;
+      return {
+        schema_version: SCHEMA_VERSION, id: `${slug(name)}-${crypto.randomBytes(4).toString('hex')}`, sequence, name, sku: String(sku ?? '').trim(),
+        type, photo: null, batch_id: batchId, quantity: 1, status: 'finished', notes: String(notes ?? '').trim(), created_at: toIso(now),
+        started_at: entry ? stamp : null, finished_at: stamp, split_from: null, time_entries: entry ? [{ ...entry }] : [],
+        total_seconds: seconds, seconds_per_piece: seconds, origin: ADDED_HERE,
+      };
+    });
+    for (const item of items) writeJson(path.join(this.itemsDir, `${item.id}.json`), item);
+    return { id: PriceBook.groupKey(items[0], this.splits()), items: items.map((i) => ({ id: i.id, name: i.name })) };
   }
 
   /** The share of all clocked time that went to TimeOverhead, from BenchClock's files. */
@@ -584,5 +652,5 @@ class PriceBook {
 
 module.exports = {
   PriceBook, PricingError, price, metalPerGram, tierFactor, roundTo, labelItems, defaultDataDir, checkPeriod, totals, confirmedFigures,
-  DEFAULT_SETTINGS, METHODS, SCOPES, CSV_FIELDS, TROY_OUNCE_GRAMS, SCHEMA_VERSION,
+  DEFAULT_SETTINGS, METHODS, SCOPES, CSV_FIELDS, TROY_OUNCE_GRAMS, SCHEMA_VERSION, PIECE_TYPES,
 };

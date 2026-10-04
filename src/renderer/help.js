@@ -56,6 +56,8 @@ function helpHtml(state) {
     <li><b>Groups</b> divides a set whose pieces are not all alike, such as earrings made together with different stones. Give each piece a letter: the pieces sharing a letter
       become a line of their own, priced on their own time and materials. All on one letter and the set is one line again.</li>
     <li><b>A custom piece</b> is always priced on its own.</li>
+    <li><b>Add a piece</b> is for old stock, or work the clock was never started for. It is added already finished, here and in BenchClock, with the hours of making you give in place of clocked time.
+      Several added together are a set with one price.</li>
     <li><b>Not finished</b> sends a piece marked finished by mistake back to the bench in BenchClock, with its time and whatever was entered for its price.</li>
   </ul>
 
