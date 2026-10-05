@@ -218,7 +218,7 @@ $('backForm').addEventListener('submit', async (ev) => {
 
 // ---- dividing a set into groups ----------------------------------------
 
-let grouping = null; // the set in the box: its id, name, pieces and the lines it is in now
+let grouping = null; // the set in the box: its id, name, pieces, the lines it is in now, and what its groups are called
 
 const groupPicks = () => Object.fromEntries([...document.querySelectorAll('#groupRows input:checked')].map((radio) => [radio.dataset.id, radio.value]));
 
@@ -229,11 +229,21 @@ function updateGroups() {
   $('groupsNote').textContent = used.length > 1 ?
     `${used.length} groups, each priced on its own: ${used.map((letter) => `${letter} with ${pieces(counts[letter])}`).join(', ')}.` :
     `All on one letter: ${grouping.name} is one set with one price.`;
+  // a name for each group in use, kept as typed while the letters are moved about
+  $('groupNames').innerHTML = used.length > 1 ? `<p class="hint">What sets each group apart, such as its stone. It is shown beside the name wherever the group is, here and in BenchClock and BenchCamera.</p>
+    <div class="choose">${used.map((letter) => `<div class="choice"><label class="who" for="groupName-${letter}">Group ${letter}</label>
+      <input type="text" id="groupName-${letter}" data-letter="${letter}" maxlength="40" placeholder="no name" value="${esc(grouping.names[letter] || '')}"></div>`).join('')}</div>` : '';
+}
+
+/** The names typed for the groups in use, trimmed: { A: 'Aquamarine' }. */
+function groupNamesTyped() {
+  const used = new Set(Object.values(groupPicks()));
+  return Object.fromEntries(Object.entries(grouping.names).map(([letter, text]) => [letter, text.replace(/\s+/g, ' ').trim()]).filter(([letter, text]) => used.has(letter) && text));
 }
 
 function openGroups(piece) {
   const set = piece.of_set;
-  grouping = { id: set.id, name: piece.name, pieces: set.pieces, lines: set.lines };
+  grouping = { id: set.id, name: piece.name, pieces: set.pieces, lines: set.lines, names: { ...set.names }, named: set.names };
   // as many letters as there are pieces, so each can stand alone
   const letters = [...new Set([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, set.pieces.length), ...set.pieces.map((i) => i.group).filter(Boolean)])].sort();
   $('groupsTitle').textContent = `${piece.name}: groups priced apart`;
@@ -246,13 +256,22 @@ function openGroups(piece) {
 }
 
 $('groupRows').addEventListener('change', updateGroups);
+$('groupNames').addEventListener('input', (ev) => { if (ev.target.dataset.letter) grouping.names[ev.target.dataset.letter] = ev.target.value; });
 $('groupsCancel').onclick = () => $('groupsDlg').close();
 $('groupsForm').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const letters = groupPicks();
   const split = new Set(Object.values(letters)).size > 1;
   const next = Object.fromEntries(grouping.pieces.map((i) => [i.id, split ? `${grouping.id}-${letters[i.id]}` : grouping.id])); // the line each piece lands on
-  if (grouping.pieces.every((i) => next[i.id] === i.line)) { $('groupsDlg').close(); return; } // nothing moved
+  const names = split ? groupNamesTyped() : {};
+  const moved = !grouping.pieces.every((i) => next[i.id] === i.line);
+  if (!moved && JSON.stringify(Object.entries(names).sort()) === JSON.stringify(Object.entries(grouping.named).sort())) { $('groupsDlg').close(); return; } // nothing changed
+  if (!moved) { // only what the groups are called
+    await api('setGroups', { id: grouping.id, letters, names });
+    $('groupsDlg').close();
+    toast(`The groups of ${grouping.name} are named.`);
+    return;
+  }
   // A new group starts with a copy of what was entered where its first piece was; a line left with no pieces is forgotten.
   const started = new Set(grouping.lines.map((line) => line.id));
   const carried = new Set();
@@ -264,7 +283,7 @@ $('groupsForm').addEventListener('submit', async (ev) => {
     ...gone.filter((line) => line.confirmed !== null).map((line) => `The confirmed price of ${money0(line.confirmed)} for ${called(line)} is dropped, to be confirmed again.`),
   ];
   if (warnings.length && !(await ask(`Change the groups of ${grouping.name}?`, warnings.join(' '), 'Change groups'))) return;
-  const done = await api('setGroups', { id: grouping.id, letters });
+  const done = await api('setGroups', { id: grouping.id, letters, names });
   $('groupsDlg').close();
   toast(done.split ? `${grouping.name} is in ${done.groups.length} groups, ${done.groups.join(', ')}, each with a line of its own.` : `${grouping.name} is one set with one price again.`);
 });

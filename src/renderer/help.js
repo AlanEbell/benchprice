@@ -54,7 +54,8 @@ function helpHtml(state) {
     <li><b>A set carries one price.</b> Pieces added together in BenchClock (<i>Moonstone ring &times;3</i>) are one line, priced once. The making time is the average per piece
       over the finished ones, so every piece in the set sells for the same.</li>
     <li><b>Groups</b> divides a set whose pieces are not all alike, such as earrings made together with different stones. Give each piece a letter: the pieces sharing a letter
-      become a line of their own, priced on their own time and materials. All on one letter and the set is one line again.</li>
+      become a line of their own, priced on their own time and materials. All on one letter and the set is one line again.
+      Each group can be given a few words for what sets it apart, such as its stone; they are shown beside the name here, in BenchCamera and on its pieces in BenchClock.</li>
     <li><b>A custom piece</b> is always priced on its own.</li>
     <li><b>Add a piece</b> is for old stock, or work the clock was never started for. It is added already finished, here and in BenchClock, with the hours of making you give in place of clocked time.
       Several added together are a set with one price.</li>

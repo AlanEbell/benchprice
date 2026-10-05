@@ -10,7 +10,7 @@
  *
  *   <data dir>/pricing/settings.json     labor rate, spot prices, metals, the three methods
  *   <data dir>/pricing/items/<id>.json   weight, metal, stones and findings for one piece
- *   <data dir>/pricing/splits.json       the sets divided into groups priced apart
+ *   <data dir>/pricing/splits.json       the sets divided into groups priced apart, and what the groups are called
  *
  * So BenchClock never sees a file it doesn't expect, and one backup of the folder keeps both.
  */
@@ -35,6 +35,7 @@ const PIECE_TYPES = [
 const ADDED_HERE = 'benchprice'; // `origin` on a piece added here and not in BenchClock
 const ADDED_NOTE = 'Made without the clock; time entered in BenchPrice';
 const MAX_HOURS = 10000;
+const GROUP_NAME_MAX = 40; // what a group of a divided set is called: a few words
 
 /**
  * Starting settings. Spot prices are a placeholder: they move every day and are yours to
@@ -424,13 +425,25 @@ class PriceBook {
     return fs.existsSync(this.splitsFile) ? readJson(this.splitsFile).sets || {} : {};
   }
 
+  /** What the groups of divided sets are called, where they were given a name: { <set>: { A: 'Aquamarine', ... } }. */
+  groupNames() {
+    return fs.existsSync(this.splitsFile) ? readJson(this.splitsFile).names || {} : {};
+  }
+
+  /** A group's line, in words: "Spiral earrings (A: Aquamarine)", or "(group A)" while it has no name. */
+  static groupLabel(name, letter, described) {
+    return described ? `${name} (${letter}: ${described})` : `${name} (group ${letter})`;
+  }
+
   /**
    * Divide a set into groups priced apart, for pieces that differ (other stones, say). `letters`
    * gives every piece of the set a letter, and the pieces sharing one become a line of their own.
    * All on one letter and the set is whole again. A new group starts with a copy of what was
    * entered where its first piece was, unconfirmed; a group left with no pieces is forgotten.
+   * `names` says what sets each group apart ({ A: 'Aquamarine' }), shown wherever the group is;
+   * left out, the groups keep the names they have.
    */
-  setGroups(setId, letters = {}) {
+  setGroups(setId, letters = {}, names) {
     const lines = this.listGroups({ includeBench: true }).filter((g) => g.of_set && g.of_set.id === setId);
     if (!lines.length) throw new PricingError('Only a set of two or more pieces can be divided into groups.');
     const members = lines[0].of_set.pieces;
@@ -445,7 +458,16 @@ class PriceBook {
     } // every one checked before anything is saved
     const groups = [...new Set(Object.values(chosen))].sort();
     const splits = this.splits();
+    const allNames = this.groupNames();
+    const given = names === undefined ? allNames[setId] || {} : names || {};
+    const described = {};
+    for (const letter of groups) {
+      const text = String(given[letter] ?? '').replace(/\s+/g, ' ').trim();
+      if (text.length > GROUP_NAME_MAX) throw new PricingError(`The name of group ${letter} is too long: ${GROUP_NAME_MAX} letters at most.`);
+      if (text) described[letter] = text;
+    }
     if (groups.length > 1) splits[setId] = chosen; else delete splits[setId];
+    if (groups.length > 1 && Object.keys(described).length) allNames[setId] = described; else delete allNames[setId];
     const keyOf = (piece) => PriceBook.groupKey({ id: piece.id, batch_id: setId }, splits);
     const started = new Set(lines.map((line) => line.id));
     for (const piece of members) { // in the set's order, so a new group's first piece decides
@@ -458,7 +480,7 @@ class PriceBook {
     }
     const kept = new Set(members.map(keyOf));
     for (const line of lines) if (!kept.has(line.id)) this.clearPricing(line.id);
-    writeJson(this.splitsFile, { schema_version: SCHEMA_VERSION, sets: splits });
+    writeJson(this.splitsFile, { schema_version: SCHEMA_VERSION, sets: splits, names: allNames });
     return { split: groups.length > 1, groups };
   }
 
@@ -507,6 +529,7 @@ class PriceBook {
    */
   listGroups({ includeBench = false } = {}) {
     const splits = this.splits();
+    const names = this.groupNames();
     const groups = new Map();
     const sets = new Map(); // every piece of a set, however it is divided
     const bySequence = (a, b) => (a.sequence || 0) - (b.sequence || 0);
@@ -528,10 +551,11 @@ class PriceBook {
       const pricing = this.pricingFor(key, members);
       const letter = PriceBook.groupLetter(first, splits);
       const whole = (key !== first.id && sets.get(first.batch_id)) || [];
+      const described = (letter && (names[first.batch_id] || {})[letter]) || '';
       const group = {
-        id: key, set: members.length > 1 || first.quantity > 1, name: first.name, label: letter ? `${first.name} (group ${letter})` : first.name,
-        group: letter, of_set: whole.length > 1 ? {
-          id: first.batch_id,
+        id: key, set: members.length > 1 || first.quantity > 1, name: first.name, label: letter ? PriceBook.groupLabel(first.name, letter, described) : first.name,
+        group: letter, group_name: described, of_set: whole.length > 1 ? {
+          id: first.batch_id, names: names[first.batch_id] || {},
           pieces: whole.map((i) => ({ id: i.id, label: i.label, number: i.number, status: i.status, total_seconds: i.total_seconds, group: PriceBook.groupLetter(i, splits), line: PriceBook.groupKey(i, splits) })),
         } : null,
         type: first.type, photo: first.photo,

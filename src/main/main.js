@@ -74,7 +74,7 @@ const api = {
   clearPricing: ({ id }) => book.clearPricing(id),
   sendBack: ({ ids }) => book.sendBack(ids),
   addPiece: (piece) => book.addPiece(piece),
-  setGroups: ({ id, letters }) => book.setGroups(id, letters),
+  setGroups: ({ id, letters, names }) => book.setGroups(id, letters, names),
   fetchSpot: () => spot.fetchSpot({ fetch: net.fetch }), // Electron's fetch follows the system's proxy
   /** Fetched and saved in one go, as the app starts when Settings says to. */
   async updateSpot() {

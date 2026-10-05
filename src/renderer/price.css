@@ -44,6 +44,10 @@
 #groupRows .segmented { flex: none; }
 #groupRows .segmented label { position: relative; }
 #groupRows .segmented span { padding: 3px 11px; }
+/* and what each group is called */
+#groupNames .choice { cursor: default; }
+#groupNames label.who { flex: none; width: 5.5em; margin: 0; font-size: inherit; color: inherit; }
+#groupNames .choice input { flex: 1; min-width: 0; width: auto; height: auto; padding: 6px 10px; }
 
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 16px; }

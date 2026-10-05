@@ -243,8 +243,21 @@ test('a set divides into groups priced apart, and goes back to one', () => {
   assert.deepEqual([line('batch-e-A').pricing.notes, line('batch-e-A').priced.confirmed, b.pieces], ['Garnets', null, 2]);
   assert.deepEqual(line('batch-e-A').of_set.lines.map((l) => [l.group, l.entered, l.confirmed]), [['A', true, null], ['B', true, b.price]]);
 
+  // what sets each group apart is shown on its line; naming changes nothing else
+  const names = () => JSON.parse(fs.readFileSync(path.join(dir, 'pricing', 'splits.json'), 'utf8')).names;
+  assert.deepEqual([line('batch-e-A').group_name, line('batch-e-A').of_set.names, names()], ['', {}, {}]);
+  book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'B', e4: 'B' }, { A: '  Garnet ', B: 'Blue   sapphire', C: 'nobody is in it' });
+  assert.deepEqual(names(), { 'batch-e': { A: 'Garnet', B: 'Blue sapphire' } });
+  assert.deepEqual(lines().map((g) => [g.label, g.group_name]), [['Spiral earrings (A: Garnet)', 'Garnet'], ['Spiral earrings (B: Blue sapphire)', 'Blue sapphire']]);
+  assert.deepEqual([line('batch-e-B').of_set.names, line('batch-e-B').pricing.confirmed.price, line('batch-e-A').pricing.notes], [{ A: 'Garnet', B: 'Blue sapphire' }, b.price, 'Garnets']);
+  assert.throws(() => book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'B', e4: 'B' }, { A: 'x'.repeat(41) }), /too long/);
+  book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'B', e4: 'B' }, { A: 'Garnet', B: '' }); // a name taken away
+  assert.deepEqual([names(), line('batch-e-B').label], [{ 'batch-e': { A: 'Garnet' } }, 'Spiral earrings (group B)']);
+  book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'B', e4: 'B' }, { A: 'Garnet', B: 'Blue sapphire' });
+
   // a piece moved to a new group takes a copy of what its old group had; a group it only leaves keeps its confirmed price
-  book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'B', e4: 'C' });
+  book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'B', e4: 'C' }); // no names given: the groups keep the ones they have
+  assert.deepEqual(names(), { 'batch-e': { A: 'Garnet', B: 'Blue sapphire' } });
   const c = line('batch-e-C');
   assert.deepEqual([c.set, c.label, c.pricing.notes, c.pricing.confirmed, c.seconds_per_piece, c.status], [false, 'Spiral earrings (group C)', 'Sapphires', null, 1800, 'in_progress']);
   assert.deepEqual([line('batch-e-B').pricing.confirmed.price, line('batch-e-B').set], [b.price, false]);
@@ -252,7 +265,7 @@ test('a set divides into groups priced apart, and goes back to one', () => {
   assert.equal(book.exportCsv(out), 4, 'every finished line: the ring, groups A and B, the custom piece');
   const rows = fs.readFileSync(out, 'utf8').trim().split('\r\n').map((row) => row.split(','));
   const row = rows.find((r) => r[0] === 'batch-e-A');
-  assert.deepEqual([row[1], row[rows[0].indexOf('quantity')], row[rows[0].indexOf('piece_ids')]], ['Spiral earrings (group A)', '2', 'e1; e2']);
+  assert.deepEqual([row[1], row[rows[0].indexOf('quantity')], row[rows[0].indexOf('piece_ids')]], ['Spiral earrings (A: Garnet)', '2', 'e1; e2']);
   assert.deepEqual(book.sendBack(['e3']), [{ id: 'e3', name: 'Spiral earrings' }]);
   assert.equal(line('batch-e-B').status, 'not_started');
 
@@ -260,6 +273,7 @@ test('a set divides into groups priced apart, and goes back to one', () => {
   book.setGroups('batch-e', { e1: 'A', e2: 'A', e3: 'C', e4: 'C' });
   assert.deepEqual(lines().map((g) => g.id), ['batch-e-A', 'batch-e-C']);
   assert.equal(fs.existsSync(priced('batch-e-B')), false);
+  assert.deepEqual(names(), { 'batch-e': { A: 'Garnet' } }, 'and its name with it');
   // a piece added to the set since goes in the first group
   write(item({ id: 'e6', sequence: 25, total_seconds: 3600 }));
   assert.deepEqual(line('batch-e-A').pieces.map((i) => i.id), ['e1', 'e2', 'e6']);
@@ -279,6 +293,7 @@ test('a set divides into groups priced apart, and goes back to one', () => {
   whole = line('batch-e');
   assert.deepEqual([lines().length, whole.group, whole.label, whole.quantity, whole.pricing.notes, whole.pricing.confirmed], [1, null, 'Spiral earrings', 5, 'Garnets', null]);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'pricing', 'splits.json'), 'utf8')).sets, {});
+  assert.deepEqual(names(), {});
   assert.deepEqual(fs.readdirSync(path.join(dir, 'pricing', 'items')), ['batch-e.json']);
   assert.deepEqual(book.setGroups('batch-e', Object.fromEntries(whole.of_set.pieces.map((i) => [i.id, 'A']))), { split: false, groups: ['A'] }, 'no change is fine');
   assert.equal(line('batch-e').pricing.notes, 'Garnets');
