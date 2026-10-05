@@ -55,7 +55,8 @@ function helpHtml(state) {
       over the finished ones, so every piece in the set sells for the same.</li>
     <li><b>Groups</b> divides a set whose pieces are not all alike, such as earrings made together with different stones. Give each piece a letter: the pieces sharing a letter
       become a line of their own, priced on their own time and materials. All on one letter and the set is one line again.
-      Each group can be given a few words for what sets it apart, such as its stone; they are shown beside the name here, in BenchCamera and on its pieces in BenchClock.</li>
+      A group is called after what its price has under What that the other groups don't, such as its stone, and that is shown beside the name here, in BenchCamera and on its pieces in BenchClock.
+      The Groups box shows what each is called, and a name typed there is used instead.</li>
     <li><b>A custom piece</b> is always priced on its own.</li>
     <li><b>Add a piece</b> is for old stock, or work the clock was never started for. It is added already finished, here and in BenchClock, with the hours of making you give in place of clocked time.
       Several added together are a set with one price.</li>

@@ -26,9 +26,10 @@ first time; the release notes say what to click.
   and price, on the making time of its own pieces. A new group starts with a copy of what was
   entered for the set, unconfirmed. Put every piece back on one letter and the set is one line
   with one price again. A group left with no pieces is forgotten, and it asks first.
-  Each group can be given a few words for what sets it apart, such as its stone: the line is
-  then *Spiral earrings (A: Aquamarine)*, here, in reports, in BenchCamera, and on each of its
-  pieces in BenchClock.
+  A group is called after what its price has under **What** that the set's other groups don't,
+  such as its stone: the line is then *Spiral earrings (A: Aquamarine)*, here, in reports, in
+  BenchCamera, and on each of its pieces in BenchClock. The groups box shows what each group is
+  called and why, and a name typed there is used instead.
 - **Price** on a line opens the piece: its metal and weight in grams, and a list of stones,
   findings and anything else bought in, at what you paid. The prices update as you type, and
   the box shows how each was arrived at. Press a method's card to price this piece that way
@@ -97,7 +98,7 @@ folder inside it:
 ```
 <BenchClock data folder>/pricing/settings.json    labor rate, spot prices, metals, the three methods
 <BenchClock data folder>/pricing/items/<id>.json  metal, weight, stones and findings for one piece
-<BenchClock data folder>/pricing/splits.json      the sets divided into groups: each piece's letter (`sets`), and what the groups are called (`names`)
+<BenchClock data folder>/pricing/splits.json      the sets divided into groups: each piece's letter (`sets`), what the groups are called (`names`, which the other apps read), and the names typed for them (`typed`)
 ```
 
 The data folder is the one BenchClock uses (`~/.local/share/BenchClock`, `%APPDATA%\BenchClock`,

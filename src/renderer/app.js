@@ -230,9 +230,13 @@ function updateGroups() {
     `${used.length} groups, each priced on its own: ${used.map((letter) => `${letter} with ${pieces(counts[letter])}`).join(', ')}.` :
     `All on one letter: ${grouping.name} is one set with one price.`;
   // a name for each group in use, kept as typed while the letters are moved about
-  $('groupNames').innerHTML = used.length > 1 ? `<p class="hint">What sets each group apart, such as its stone. It is shown beside the name wherever the group is, here and in BenchClock and BenchCamera.</p>
+  // Each is called after what its price has under What that the others don't; a name typed here is used instead.
+  const priced = (letter) => (!grouping.lines.some((line) => line.group === letter) ? 'A new group: it starts with a copy of the price its first piece had.' :
+    (grouping.what[letter] || []).length ? `Under What on its price: ${grouping.what[letter].map(esc).join(', ')}` : 'Nothing under What on its price yet.');
+  $('groupNames').innerHTML = used.length > 1 ? `<p class="hint">What each group is called, shown beside the name here and in BenchClock and BenchCamera. A group is called after what its price has under <b>What</b> that the others don't, such as its stone. Type a name to use that instead.</p>
     <div class="choose">${used.map((letter) => `<div class="choice"><label class="who" for="groupName-${letter}">Group ${letter}</label>
-      <input type="text" id="groupName-${letter}" data-letter="${letter}" maxlength="40" placeholder="no name" value="${esc(grouping.names[letter] || '')}"></div>`).join('')}</div>` : '';
+      <span class="naming"><input type="text" id="groupName-${letter}" data-letter="${letter}" maxlength="40" placeholder="${esc(grouping.derived[letter] || 'no name yet')}" value="${esc(grouping.names[letter] || '')}">
+      <small>${priced(letter)}</small></span></div>`).join('')}</div>` : '';
 }
 
 /** The names typed for the groups in use, trimmed: { A: 'Aquamarine' }. */
@@ -243,7 +247,7 @@ function groupNamesTyped() {
 
 function openGroups(piece) {
   const set = piece.of_set;
-  grouping = { id: set.id, name: piece.name, pieces: set.pieces, lines: set.lines, names: { ...set.names }, named: set.names };
+  grouping = { id: set.id, name: piece.name, pieces: set.pieces, lines: set.lines, names: { ...set.typed }, named: set.typed, derived: set.derived, what: set.what };
   // as many letters as there are pieces, so each can stand alone
   const letters = [...new Set([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, set.pieces.length), ...set.pieces.map((i) => i.group).filter(Boolean)])].sort();
   $('groupsTitle').textContent = `${piece.name}: groups priced apart`;

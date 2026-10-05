@@ -425,9 +425,52 @@ class PriceBook {
     return fs.existsSync(this.splitsFile) ? readJson(this.splitsFile).sets || {} : {};
   }
 
-  /** What the groups of divided sets are called, where they were given a name: { <set>: { A: 'Aquamarine', ... } }. */
-  groupNames() {
-    return fs.existsSync(this.splitsFile) ? readJson(this.splitsFile).names || {} : {};
+  /**
+   * What the groups of divided sets are called. A group is called after the lines under "What"
+   * on its price that the set's other groups don't all have (its stone, say), unless a name was
+   * typed for it in the groups box. Returns, each as { <set>: { A: 'Aquamarine', ... } }:
+   * `typed` the names typed, `derived` the ones taken from the prices, `names` the one in use,
+   * and `what`, every "What" line of each group as { <set>: { A: ['Aquamarine'], ... } }.
+   */
+  groupNaming(sets = this.splits()) {
+    const file = fs.existsSync(this.splitsFile) ? readJson(this.splitsFile) : {};
+    const typed = file.typed || (file.typed === undefined && file.names) || {}; // before names were taken from the prices, `names` held the typed ones
+    const derived = {};
+    const what = {};
+    const names = {};
+    for (const [setId, letters] of Object.entries(sets)) {
+      const used = [...new Set(Object.values(letters))].sort();
+      what[setId] = Object.fromEntries(used.map((letter) => [letter,
+        [...new Set(this.getPricing(`${setId}-${letter}`).components.map((c) => String(c.name || '').trim()).filter(Boolean))]]));
+      const inAll = (name) => used.every((letter) => what[setId][letter].some((other) => other.toLowerCase() === name.toLowerCase()));
+      derived[setId] = {};
+      for (const letter of used) {
+        let text = '';
+        for (const name of what[setId][letter].filter((n) => !inAll(n))) {
+          const longer = text ? `${text}, ${name}` : name;
+          if (longer.length > GROUP_NAME_MAX) { text = text || name.slice(0, GROUP_NAME_MAX); break; }
+          text = longer;
+        }
+        if (text) derived[setId][letter] = text;
+      }
+      names[setId] = { ...derived[setId], ...Object.fromEntries(Object.entries(typed[setId] || {}).filter(([letter]) => used.includes(letter))) };
+    }
+    return { typed, derived, names, what };
+  }
+
+  groupNames() { return this.groupNaming().names; }
+
+  /**
+   * Keep `names` in splits.json, which BenchClock and BenchCamera read, saying what the groups
+   * are called now. Run after anything that can change it: a price saved, the groups changed.
+   */
+  syncGroupNames() {
+    if (!fs.existsSync(this.splitsFile)) return;
+    const file = readJson(this.splitsFile);
+    const { typed, names } = this.groupNaming(file.sets || {});
+    const kept = Object.fromEntries(Object.entries(names).filter(([, of]) => Object.keys(of).length));
+    const next = { schema_version: SCHEMA_VERSION, sets: file.sets || {}, names: kept, typed };
+    if (JSON.stringify(next) !== JSON.stringify(file)) writeJson(this.splitsFile, next);
   }
 
   /** A group's line, in words: "Spiral earrings (A: Aquamarine)", or "(group A)" while it has no name. */
@@ -440,8 +483,8 @@ class PriceBook {
    * gives every piece of the set a letter, and the pieces sharing one become a line of their own.
    * All on one letter and the set is whole again. A new group starts with a copy of what was
    * entered where its first piece was, unconfirmed; a group left with no pieces is forgotten.
-   * `names` says what sets each group apart ({ A: 'Aquamarine' }), shown wherever the group is;
-   * left out, the groups keep the names they have.
+   * `names` are the names typed for the groups ({ A: 'Aquamarine' }), shown wherever the group is;
+   * a group without one is called after its price (see groupNaming). Left out, the typed names stay.
    */
   setGroups(setId, letters = {}, names) {
     const lines = this.listGroups({ includeBench: true }).filter((g) => g.of_set && g.of_set.id === setId);
@@ -458,7 +501,7 @@ class PriceBook {
     } // every one checked before anything is saved
     const groups = [...new Set(Object.values(chosen))].sort();
     const splits = this.splits();
-    const allNames = this.groupNames();
+    const allNames = this.groupNaming().typed;
     const given = names === undefined ? allNames[setId] || {} : names || {};
     const described = {};
     for (const letter of groups) {
@@ -480,7 +523,8 @@ class PriceBook {
     }
     const kept = new Set(members.map(keyOf));
     for (const line of lines) if (!kept.has(line.id)) this.clearPricing(line.id);
-    writeJson(this.splitsFile, { schema_version: SCHEMA_VERSION, sets: splits, names: allNames });
+    writeJson(this.splitsFile, { schema_version: SCHEMA_VERSION, sets: splits, names: {}, typed: allNames });
+    this.syncGroupNames();
     return { split: groups.length > 1, groups };
   }
 
@@ -529,7 +573,8 @@ class PriceBook {
    */
   listGroups({ includeBench = false } = {}) {
     const splits = this.splits();
-    const names = this.groupNames();
+    const naming = this.groupNaming(splits);
+    const { names } = naming;
     const groups = new Map();
     const sets = new Map(); // every piece of a set, however it is divided
     const bySequence = (a, b) => (a.sequence || 0) - (b.sequence || 0);
@@ -555,7 +600,7 @@ class PriceBook {
       const group = {
         id: key, set: members.length > 1 || first.quantity > 1, name: first.name, label: letter ? PriceBook.groupLabel(first.name, letter, described) : first.name,
         group: letter, group_name: described, of_set: whole.length > 1 ? {
-          id: first.batch_id, names: names[first.batch_id] || {},
+          id: first.batch_id, names: names[first.batch_id] || {}, typed: naming.typed[first.batch_id] || {}, derived: naming.derived[first.batch_id] || {}, what: naming.what[first.batch_id] || {},
           pieces: whole.map((i) => ({ id: i.id, label: i.label, number: i.number, status: i.status, total_seconds: i.total_seconds, group: PriceBook.groupLetter(i, splits), line: PriceBook.groupKey(i, splits) })),
         } : null,
         type: first.type, photo: first.photo,
@@ -651,6 +696,7 @@ class PriceBook {
     if (notes !== undefined) next.notes = String(notes ?? '').trim();
     next.updated_at = new Date().toISOString();
     writeJson(this.pricedPath(itemId), next);
+    this.syncGroupNames();
     return next;
   }
 

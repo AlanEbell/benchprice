@@ -71,7 +71,7 @@ const api = {
   saveSettings: (changes) => book.saveSettings(changes),
   savePricing: ({ id, ...changes }) => book.savePricing(id, changes),
   confirmPrice: ({ id, ...changes }) => book.confirmPrice(id, changes),
-  clearPricing: ({ id }) => book.clearPricing(id),
+  clearPricing: ({ id }) => { book.clearPricing(id); book.syncGroupNames(); },
   sendBack: ({ ids }) => book.sendBack(ids),
   addPiece: (piece) => book.addPiece(piece),
   setGroups: ({ id, letters, names }) => book.setGroups(id, letters, names),
@@ -186,6 +186,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(() => {
     book = new PriceBook(dataDirArg ? dataDirArg.slice('--data-dir='.length) : undefined);
+    book.syncGroupNames(); // for sets divided before groups were called after their prices
     protocol.handle('bench-photo', (request) => {
       const name = new URL(request.url).pathname.replace(/^\//, '');
       const file = path.join(book.photosDir, name);
