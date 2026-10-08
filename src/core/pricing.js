@@ -25,6 +25,9 @@ const { METHODS, TROY_OUNCE_GRAMS, metalPerGram, tierFactor, roundTo, price, rou
 const APP_NAME = 'BenchClock'; // the data folder is BenchClock's
 const SCHEMA_VERSION = 1;
 const OVERHEAD_ID = 'time-overhead';
+// BenchClock's other line that is not a piece: time pulled away from the bench, neither making nor overhead
+const DISTRACTED_ID = 'time-distracted';
+const ASIDE_IDS = [OVERHEAD_ID, DISTRACTED_ID];
 
 // BenchClock's kinds of piece, for a piece added here.
 const PIECE_TYPES = [
@@ -306,11 +309,11 @@ class PriceBook {
     return item;
   }
 
-  /** Every BenchClock piece (not TimeOverhead), labelled, finished ones first. */
+  /** Every BenchClock piece (not TimeOverhead or TimeDistracted), labelled, finished ones first. */
   listItems() {
     if (!this.hasBenchClock()) return [];
     const items = fs.readdirSync(this.itemsDir)
-      .filter((name) => name.endsWith('.json') && name !== `${OVERHEAD_ID}.json`)
+      .filter((name) => name.endsWith('.json') && !ASIDE_IDS.includes(name.slice(0, -5)))
       .map((name) => this.readItem(path.join(this.itemsDir, name)));
     labelItems(items);
     items.sort((a, b) => (b.status === 'finished') - (a.status === 'finished') ||
@@ -328,7 +331,7 @@ class PriceBook {
   sendBack(itemIds) {
     if (!Array.isArray(itemIds) || !itemIds.length) throw new PricingError('Choose at least one piece to send back.');
     const files = [...new Set(itemIds.map(String))].map((id) => {
-      if (!/^[\w-]+$/.test(id) || id === OVERHEAD_ID) throw new PricingError(`No piece with id ${id}`);
+      if (!/^[\w-]+$/.test(id) || ASIDE_IDS.includes(id)) throw new PricingError(`No piece with id ${id}`);
       const file = path.join(this.itemsDir, `${id}.json`);
       if (!fs.existsSync(file)) throw new PricingError(`No piece with id ${id} in BenchClock.`);
       return [file, readJson(file)];
@@ -387,7 +390,11 @@ class PriceBook {
     return { id: PriceBook.groupKey(items[0], this.splits()), items: items.map((i) => ({ id: i.id, name: i.name })) };
   }
 
-  /** The share of all clocked time that went to TimeOverhead, from BenchClock's files. */
+  /**
+   * The share of clocked time that went to TimeOverhead, from BenchClock's files. Time on
+   * TimeDistracted (BenchClock 1.6.0 on) is left out of both sides: it is neither making nor
+   * the work around it, and shouldn't be loaded onto the prices.
+   */
   measuredOverheadShare() {
     const file = path.join(this.itemsDir, `${OVERHEAD_ID}.json`);
     if (!fs.existsSync(file)) return 0;

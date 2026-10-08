@@ -95,7 +95,8 @@ function helpHtml(state) {
   <p>Not every hour in the workshop goes into a piece: ordering, photographs, cleaning up and the rest are clocked in BenchClock as TimeOverhead. This method makes the making hours pay
     for those hours too, by raising the hourly rate. If ${pct(m2.overhead_share)} of your time is overhead, only ${pct(1 - m2.overhead_share)} of it earns, so the rate is divided by that share.
     The TimeOverhead share is ${overridden ? `set by hand in Settings at ${pct(m2.overhead_share)}; BenchClock measures ${pct(state.measuredOverhead)}` :
-    `measured from BenchClock: the time on TimeOverhead divided by all the time clocked, now ${pct(m2.overhead_share)}`}.</p>
+    `measured from BenchClock: the time on TimeOverhead divided by all the time clocked, now ${pct(m2.overhead_share)}`}.
+    Time BenchClock has as TimeDistracted, when you were pulled away from the bench altogether, is left out of that: it is neither making nor overhead.</p>
   <p>Then a profit margin is added, yours being ${pct(m2.margin)}. A margin is a share of the price, not of the cost, which is why the cost is divided by (1 &minus; margin)
     rather than multiplied: a 20% margin on $100 of cost gives $125, of which $25 is 20%.</p>
   ${formula('loaded rate = labor rate &divide; (1 &minus; TimeOverhead share)<br>price = (hours &times; loaded rate + materials) &divide; (1 &minus; margin)')}

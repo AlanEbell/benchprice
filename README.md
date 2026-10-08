@@ -52,7 +52,8 @@ first time; the release notes say what to click.
   1. **Cost-plus**: materials plus labor, times a factor (2 to start).
   2. **Loaded hourly** (the default): your hourly rate divided by the share of clocked time
      that is making, so the making hours carry the TimeOverhead, then a profit margin. The
-     TimeOverhead share is measured from BenchClock's files and can be overridden.
+     TimeOverhead share is measured from BenchClock's files and can be overridden; BenchClock's
+     TimeDistracted (time away from the bench altogether) is left out of it.
   3. **Tiered materials**: each material marked up by its cost band (cheap findings more,
      expensive stones less), plus labor and a studio overhead per hour, then a margin.
   Selling fees and rounding (to the nearest $5, say, going up, to the nearest or down) are applied
